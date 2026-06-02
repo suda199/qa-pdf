@@ -36,11 +36,7 @@ let socket;
 if (typeof io !== 'undefined') {
     socket = io();
 } else {
-    const errorMsg = "⚠️ サーバー経由でアクセスされていません。\n\n" +
-                     "ブラウザのURL入力欄に以下を入力してアクセスしてください：\n\n" +
-                     "http://localhost:3000";
-    alert(errorMsg);
-    console.error(errorMsg);
+    console.error("Socket.io が読み込まれていません。");
     socket = { on: () => {}, emit: () => {} };
 }
 

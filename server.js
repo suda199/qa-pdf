@@ -110,11 +110,7 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, () => {
     console.log(`--------------------------------------------------`);
-    console.log(` qa-pdf サーバーが起動しました！`);
-    console.log(` ローカルアクセス: http://localhost:${PORT}`);
-    console.log(` 同じネットワークの他端末からアクセスする場合:`);
-    console.log(` http://<あなたのPCのIPアドレス>:${PORT}`);
-    console.log(`--------------------------------------------------`);
+    console.log(`サーバーがポート ${PORT} で起動しました。`);
 });
