@@ -1,26 +1,27 @@
 :root {
-    --primary-color: #6366f1;
-    --primary-hover: #4f46e5;
-    --primary-glow: rgba(99, 102, 241, 0.35);
-    --bg-app: #090d16;
-    --bg-sidebar: #111827;
-    --bg-card: #1f2937;
-    --text-main: #f9fafb;
-    --text-muted: #9ca3af;
-    --border-color: #374151;
-    --accent-color: #10b981;
-    --shadow-premium: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+    --bg-main: #0f172a;
+    --bg-side: #1e293b;
+    --bg-card: #334155;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --border: #475569;
+    --error: #ef4444;
+    --success: #10b981;
+    --font-main: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+    --font-heading: 'Outfit', sans-serif;
 }
 
 body { 
-    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+    font-family: var(--font-main);
     margin: 0; 
     padding: 0; 
     display: flex; 
     flex-direction: column;
     height: 100vh;
-    background-color: var(--bg-app);
-    color: var(--text-main);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
     overflow: hidden;
 }
 
@@ -32,276 +33,299 @@ body {
     width: 100%;
 }
 
-/* ボード表示エリア */
-.board-area { 
-    width: 70%; 
-    height: 100%; 
-    overflow-y: auto; 
-    background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
-    padding: 40px;
-    box-sizing: border-box;
+.board-area {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 20px;
+    height: 100vh;
+    min-width: 0;
 }
 
 .board-header {
-    text-align: center;
-    width: 100%;
-    max-width: 900px;
-    margin-bottom: 10px;
+    padding: 12px 20px;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
 }
 
 .board-header h2 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin: 0 0 8px 0;
-    color: var(--text-main);
-    letter-spacing: -0.025em;
-    background: linear-gradient(135deg, #a5b4fc 0%, #6366f1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
 }
 
 .board-header p {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-    margin: 0;
+    margin: 4px 0 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
 }
 
-/* 共有ホワイトボード本体 */
-.shared-board {
-    position: relative;
-    width: 100%;
-    max-width: 900px;
-    height: 560px;
-    background: #111827;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
+.pdf-area { 
+    flex: 1;
+    overflow-y: auto; 
+    background: #020617; 
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* ページネーション操作エリア */
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-card);
+    padding: 8px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    flex-shrink: 0; /* 押し潰されないように固定 */
+}
+
+.pagination-controls button {
+    width: auto;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+}
+
+.page-num-input {
+    width: 60px;
+    text-align: center;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 0;
+    font-family: var(--font-main);
+    font-weight: 600;
+}
+
+.pdf-page-container { 
+    position: relative; 
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
+    background: white; 
     cursor: crosshair;
-    box-shadow: var(--shadow-premium), inset 0 0 40px rgba(0, 0, 0, 0.6);
-    overflow: hidden;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
-    
-    /* プレミアムなデジタルグリッドパターン */
-    background-image: 
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-    background-size: 30px 30px;
+    transition: transform 0.2s ease;
 }
 
-.shared-board:hover {
-    border-color: rgba(99, 102, 241, 0.3);
-    box-shadow: var(--shadow-premium), 0 0 20px rgba(99, 102, 241, 0.05);
+canvas { 
+    display: block; 
+    max-width: 100%; 
 }
 
-.board-grid-label {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: rgba(255, 255, 255, 0.15);
-    font-size: 1.1rem;
-    font-weight: 500;
-    pointer-events: none;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-}
-
-/* 操作パネル */
 .form-area { 
-    width: 30%; 
-    padding: 30px 25px; 
+    width: 320px; 
+    padding: 20px; 
     box-sizing: border-box; 
-    background: var(--bg-sidebar); 
+    background: var(--bg-side); 
     display: flex; 
     flex-direction: column; 
-    gap: 25px;
-    box-shadow: -15px 0 35px rgba(0, 0, 0, 0.4);
+    gap: 16px;
+    border-left: 1px solid var(--border);
+    overflow-y: auto; 
     z-index: 10;
-    border-left: 1px solid var(--border-color);
-    overflow-y: auto;
+
+    /* スクロールバーのスタイルを統一 */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.form-area::-webkit-scrollbar {
+    width: 6px;
+}
+
+.form-area::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 10px;
 }
 
 h2, h3 { 
-    margin-top: 0; 
-    font-weight: 600;
-    letter-spacing: -0.025em;
-}
-
-h2 {
-    font-size: 1.3rem;
-    color: var(--text-main);
-    border-bottom: 2px solid var(--primary-color);
-    padding-bottom: 10px;
-}
-
-h3 {
-    font-size: 1.05rem;
-    color: var(--text-main);
+    font-family: var(--font-heading);
+    margin: 0;
+    color: var(--text-primary);
 }
 
 label { 
-    font-weight: 500; 
-    font-size: 0.85rem; 
-    color: var(--text-muted);
-    margin-bottom: 6px;
     display: block;
+    font-weight: 600; 
+    font-size: 0.85rem; 
+    margin-bottom: 8px;
+    color: var(--text-secondary);
 }
 
 textarea { 
     width: 100%; 
-    height: 100px; 
-    padding: 12px 14px; 
+    height: 80px; 
+    padding: 12px; 
     box-sizing: border-box; 
-    border: 1px solid var(--border-color); 
-    border-radius: 10px; 
+    border: 1px solid var(--border); 
+    border-radius: 8px; 
     resize: none; 
     font-size: 0.9rem;
-    background: var(--bg-card);
-    color: var(--text-main);
-    transition: all 0.25s ease;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    transition: border-color 0.2s;
 }
 
 textarea:focus {
     outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-glow);
+    border-color: var(--accent);
 }
 
 button { 
     width: 100%; 
-    padding: 12px 16px; 
-    background: var(--primary-color); 
+    padding: 12px; 
+    background: var(--accent); 
     color: white; 
     border: none; 
-    border-radius: 10px; 
+    border-radius: 8px; 
     font-weight: 600; 
     cursor: pointer; 
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    transition: all 0.2s;
+    font-family: var(--font-heading);
 }
 
 button:hover { 
-    background: var(--primary-hover); 
+    background: var(--accent-hover); 
     transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 button:active {
     transform: translateY(0);
 }
 
-button:disabled { 
-    background: var(--border-color); 
-    color: var(--text-muted);
-    cursor: not-allowed; 
-    transform: none;
-    box-shadow: none;
-}
-
-/* ステータスバッジ */
-.status-badge {
-    background: rgba(16, 185, 129, 0.08);
-    color: var(--accent-color);
-    border: 1px solid rgba(16, 185, 129, 0.15);
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-align: center;
-    letter-spacing: 0.025em;
-}
-
 /* マーカー */
 .marker {
     position: absolute;
-    width: 26px;
-    height: 26px;
-    background-color: rgba(239, 68, 68, 0.9);
-    border: 2px solid #ffffff;
+    width: 24px;
+    height: 24px;
+    background-color: var(--error);
+    border: 3px solid white;
     border-radius: 50%;
     transform: translate(-50%, -50%);
     cursor: pointer;
     z-index: 5;
-    box-shadow: 0 6px 15px rgba(239, 68, 68, 0.4);
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .marker:hover {
-    transform: translate(-50%, -50%) scale(1.25);
-    background-color: #ef4444;
-    box-shadow: 0 8px 20px rgba(239, 68, 68, 0.6);
-    z-index: 15;
+    transform: translate(-50%, -50%) scale(1.2);
 }
 
 .marker:hover::after {
     content: attr(data-reason);
     position: absolute;
-    bottom: 34px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(17, 24, 39, 0.95);
+    background: #000;
     color: white;
-    padding: 8px 14px;
-    border-radius: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
     font-size: 0.8rem;
     white-space: normal;
-    min-width: 160px;
-    max-width: 250px;
-    z-index: 20;
+    min-width: 150px;
+    max-width: 200px;
+    z-index: 10;
     pointer-events: none;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
 }
 
-/* 一時選択マーカー */
 .temp-marker { 
-    background-color: rgba(59, 130, 246, 0.9) !important; 
+    background-color: var(--accent) !important; 
     border-style: dashed;
-    box-shadow: 0 6px 15px rgba(59, 130, 246, 0.4);
-    animation: pulse 1.5s infinite;
+    opacity: 0.8;
 }
 
-@keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-    70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+.status-badge {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
 }
 
 .marker-count {
-    font-size: 0.8rem;
-    color: var(--text-muted);
     background: var(--bg-card);
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75rem;
 }
 
-/* マーカーリスト項目 */
+/* マーク一覧セクションのレイアウト固定 */
+.markers-section-wrapper {
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1; /* 残りのスペースをすべて占有 */
+    min-height: 0; /* 子要素のスクロールを有効にするために必須 */
+    overflow: hidden;
+}
+
+.marker-list-scrollarea {
+    flex: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.small-btn {
+    padding: 5px 10px !important;
+    font-size: 0.75rem !important;
+    width: auto !important;
+    height: auto !important;
+}
+
+/* マーク一覧アイテムの改善 */
+#marker-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-card) transparent;
+}
+
+#marker-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#marker-list::-webkit-scrollbar-thumb {
+    background-color: var(--bg-card);
+    border-radius: 10px;
+}
+
 .marker-item {
-    margin-bottom: 10px; 
-    padding: 12px 14px; 
-    border-radius: 8px;
-    background: var(--bg-card);
-    border-left: 4px solid var(--primary-color);
-    font-size: 0.85rem;
-    line-height: 1.5;
-    transition: all 0.2s ease;
-    border-top: 1px solid rgba(255, 255, 255, 0.02);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    border-left: 4px solid var(--accent);
+    transition: all 0.2s;
+    cursor: pointer;
 }
 
 .marker-item:hover {
-    background: rgba(255, 255, 255, 0.04);
-    transform: translateX(2px);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateX(4px);
+    border-left-color: var(--success);
 }
 
-.marker-item strong {
-    color: #818cf8;
+.marker-info {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.marker-text {
+    font-size: 0.95rem; 
+    line-height: 1.6;
+    color: var(--text-primary);
+    word-break: break-all;
 }

@@ -8,9 +8,9 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^4.22.2",
     "multer": "^1.4.5-lts.1",
-    "socket.io": "^4.7.5",
-    "pdfjs-dist": "3.11.174"
+    "pdfjs-dist": "3.11.174",
+    "socket.io": "^4.8.3"
   }
 }

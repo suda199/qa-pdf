@@ -44,18 +44,34 @@ if (typeof io !== 'undefined') {
     socket = { on: () => {}, emit: () => {} };
 }
 
+// --- 1.1 PDF.js 設定 ---
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 // --- 2. アプリケーション状態 ---
 let selectedData = { x: null, y: null };
 let markers = [];
 const markerIds = new Set();
+let currentPdfRender = null;
+let lastPdfUrl = null;
+let currentPageNum = 1;
+let totalPages = 0;
 
-const sharedBoard = document.getElementById('shared-board');
+const sharedBoard = document.getElementById('pdf-container');
 const coordDisplay = document.getElementById('coord-display');
 const reasonInput = document.getElementById('reason');
 const addBtn = document.getElementById('add-btn');
+const pdfUpload = document.getElementById('pdf-upload');
+const prevBtn = document.getElementById('prev-page');
+const nextBtn = document.getElementById('next-page');
+const pageInput = document.getElementById('current-page-input');
+const totalPagesDisplay = document.getElementById('total-pages-display');
 
 // --- 3. ボードのクリックによる位置選択 ---
 sharedBoard.addEventListener('click', (e) => {
+    // PDFが読み込まれていない場合は無視
+    if (!currentPdfRender) return;
+
     // マーカー要素自体がクリックされた場合は新規マーカー作成処理を行わない
     if (e.target.classList.contains('marker')) {
         return;
@@ -66,7 +82,7 @@ sharedBoard.addEventListener('click', (e) => {
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
     selectedData = { x, y };
-    coordDisplay.innerText = `X: ${x.toFixed(1)}%, Y: ${y.toFixed(1)}%`;
+    coordDisplay.innerText = `位置を選択しました (Page ${currentPageNum})`;
 
     // 一時マーカーの更新
     document.querySelectorAll('.temp-marker').forEach(m => m.remove());
@@ -77,30 +93,124 @@ sharedBoard.addEventListener('click', (e) => {
     sharedBoard.appendChild(temp);
 });
 
+// --- 3.5 ページナビゲーションの動作 ---
+prevBtn.addEventListener('click', () => {
+    if (currentPageNum > 1) {
+        renderPage(currentPageNum - 1);
+    }
+});
+
+nextBtn.addEventListener('click', () => {
+    if (currentPageNum < totalPages) {
+        renderPage(currentPageNum + 1);
+    }
+});
+
+pageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        let val = parseInt(pageInput.value);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > totalPages) val = totalPages;
+        renderPage(val);
+    }
+});
+
+// 入力欄からフォーカスが外れたときも現在のページに戻す
+pageInput.addEventListener('blur', () => {
+    pageInput.value = currentPageNum;
+});
+
+// ウィンドウリサイズ時にPDFを再描画してサイズを合わせる
+window.addEventListener('resize', () => {
+    if (lastPdfUrl) {
+        // 連続してリサイズされた時のために少し待機して実行 (デバウンス)
+        clearTimeout(window.resizeTimer);
+        window.resizeTimer = setTimeout(() => {
+            renderPage(currentPageNum);
+        }, 200);
+    }
+});
+
 // --- 4. マーカー追加 (自分・他人共通) ---
-function addMarkerToUI(x, y, reason) {
-    const id = `${Number(x).toFixed(2)}-${Number(y).toFixed(2)}-${reason}`;
+function addMarkerToUI(x, y, reason, page) {
+    const targetPage = page || currentPageNum;
+    const id = `${targetPage}-${Number(x).toFixed(2)}-${Number(y).toFixed(2)}-${reason}`;
     if (markerIds.has(id)) return;
     markerIds.add(id);
 
-    const markerData = { x, y, reason };
+    const markerData = { x, y, reason, page: targetPage };
     markers.push(markerData);
 
-    // ボード上にマーカーを配置
-    const marker = document.createElement("div");
-    marker.className = "marker";
-    marker.style.left = x + "%";
-    marker.style.top = y + "%";
-    marker.setAttribute("data-reason", reason);
-    
-    // マーカークリック時に内容をアラート表示
-    marker.addEventListener('click', (e) => {
-        e.stopPropagation();
-        alert(`📍 質問内容:\n${reason}`);
-    });
+    refreshMarkersUI();
+}
 
-    sharedBoard.appendChild(marker);
+function refreshMarkersUI() {
+    // 現在のボード上のマーカーを一旦クリア（一時マーカー以外）
+    document.querySelectorAll('.marker:not(.temp-marker)').forEach(m => m.remove());
+    
+    // 現在のページに属するマーカーのみを描画
+    markers.filter(m => m.page === currentPageNum).forEach(m => {
+        const marker = document.createElement("div");
+        marker.className = "marker";
+        marker.style.left = m.x + "%";
+        marker.style.top = m.y + "%";
+        marker.setAttribute("data-reason", m.reason);
+        
+        marker.addEventListener('click', (e) => {
+            e.stopPropagation();
+            alert(`📍 [Page ${m.page}] 質問内容:\n${m.reason}`);
+        });
+
+        sharedBoard.appendChild(marker);
+    });
     updateMarkerListUI();
+}
+
+// --- 4.5 PDFレンダリング処理 ---
+async function loadPdf(pdfUrl, startPage = 1) {
+    try {
+        lastPdfUrl = pdfUrl;
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        currentPdfRender = await loadingTask.promise;
+        totalPages = currentPdfRender.numPages;
+        renderPage(startPage);
+    } catch (err) {
+        console.error("PDFの読み込みに失敗しました:", err);
+    }
+}
+
+async function renderPage(pageNum) {
+    if (!currentPdfRender) return;
+    currentPageNum = pageNum;
+
+    try {
+        const page = await currentPdfRender.getPage(pageNum);
+        const canvas = document.getElementById('pdf-canvas');
+        const context = canvas.getContext('2d');
+
+        // ボードの幅（パディングを除く）に合わせてスケーリング
+        const container = document.getElementById('shared-board');
+        const availableWidth = container.clientWidth - 40; // 左右パディング分を引く
+        
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const scale = availableWidth / unscaledViewport.width;
+        const scaledViewport = page.getViewport({ scale: scale });
+
+        canvas.height = scaledViewport.height;
+        canvas.width = scaledViewport.width;
+
+        const renderContext = {
+            canvasContext: context,
+            viewport: scaledViewport
+        };
+        await page.render(renderContext).promise;
+        
+        if (pageInput) pageInput.value = pageNum;
+        if (totalPagesDisplay) totalPagesDisplay.innerText = totalPages;
+        refreshMarkersUI();
+    } catch (err) {
+        console.error("ページの描画に失敗しました:", err);
+    }
 }
 
 function updateMarkerListUI() {
@@ -110,11 +220,19 @@ function updateMarkerListUI() {
         list.innerHTML = '<div style="color:#64748b;font-style:italic;">まだマークはありません。</div>';
         return;
     }
-    list.innerHTML = markers.map(m => `
-        <div class="marker-item">
-            <strong>座標 (X:${Number(m.x).toFixed(1)}%, Y:${Number(m.y).toFixed(1)}%):</strong> ${m.reason}
-        </div>
-    `).join('');
+    
+    list.innerHTML = '';
+    markers.forEach((m, index) => {
+        const item = document.createElement('div');
+        item.className = 'marker-item';
+        item.innerHTML = `
+            <div class="marker-info">PAGE ${m.page}</div>
+            <div class="marker-text">${m.reason}</div>
+        `;
+        // クリックで該当ページへ移動
+        item.onclick = () => renderPage(m.page);
+        list.appendChild(item);
+    });
 }
 
 function clearAllMarkersUI() {
@@ -134,7 +252,8 @@ addBtn.addEventListener("click", () => {
     const markerData = {
         x: selectedData.x,
         y: selectedData.y,
-        reason: reason
+        reason: reason,
+        page: currentPageNum
     };
 
     // サーバーへ送信（リアルタイム共有）
@@ -144,7 +263,27 @@ addBtn.addEventListener("click", () => {
     document.querySelectorAll('.temp-marker').forEach(m => m.remove());
     reasonInput.value = "";
     selectedData = { x: null, y: null };
-    coordDisplay.innerText = "未選択 (ボードをクリック)";
+    coordDisplay.innerText = "ボードをクリックして場所を指定してください";
+});
+
+// PDFアップロードイベント
+pdfUpload.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('pdf', file);
+
+    try {
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (!result.success) alert("アップロードに失敗しました");
+    } catch (err) {
+        console.error("Upload error:", err);
+    }
 });
 
 // --- 6. 同期イベント受信 ---
@@ -160,10 +299,21 @@ socket.on('disconnect', () => {
     if (info) info.innerText = "ネットワーク: 切断されました。再接続中...";
 });
 
+// 2. PDF更新受信
+socket.on('pdf-initialized', (pdfData) => {
+    if (pdfData && pdfData.url) {
+        loadPdf(pdfData.url, pdfData.currentPage || 1);
+    }
+});
+
+socket.on('pdf-updated', (pdfData) => {
+    loadPdf(pdfData.url, 1);
+});
+
 // 2. マーカー個別受信
 socket.on('marker-added', (data) => {
     if (data) {
-        addMarkerToUI(data.x, data.y, data.reason);
+        addMarkerToUI(data.x, data.y, data.reason, data.page);
     }
 });
 
@@ -172,7 +322,7 @@ socket.on('markers-initialized', (markersList) => {
     clearAllMarkersUI();
     if (markersList) {
         markersList.forEach(m => {
-            addMarkerToUI(m.x, m.y, m.reason);
+            addMarkerToUI(m.x, m.y, m.reason, m.page);
         });
     }
 });
@@ -203,15 +353,21 @@ document.getElementById("import-file").addEventListener("change", (e) => {
     reader.onload = function(e) {
         try {
             const imported = JSON.parse(e.target.result);
+            if (!Array.isArray(imported)) throw new Error("Invalid format");
+
+            // データを一件ずつ送信
             imported.forEach(m => {
                 const markerData = {
                     x: m.x,
                     y: m.y,
-                    reason: m.reason
+                    reason: m.reason,
+                    page: m.page || 1
                 };
                 socket.emit('add-marker', markerData);
             });
-        } catch(err) { alert("形式が正しくありません"); }
+        } catch(err) { 
+            alert("ファイルの形式が正しくありません。正しいJSONファイルを選択してください。"); 
+        }
     };
     reader.readAsText(file);
 });

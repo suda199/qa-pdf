@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -20,13 +21,26 @@
         <!-- 左側：共有ボードエリア -->
         <div class="board-area">
             <div class="board-header">
-                <h2>📍 リアルタイム共有ボード (講義・発表スライド見立て)</h2>
-                <p>ボード上の疑問・気になる部分をクリックしてマークを追加してください。</p>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2>📍 リアルタイム共有ボード</h2>
+                        <p>ボード上の疑問部分をクリックしてマークを追加してください。</p>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="prev-page" style="background: var(--border);">前へ</button>
+                        <div id="page-info" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                            Page: <input type="number" id="current-page-input" value="1" min="1" class="page-num-input">
+                            / <span id="total-pages-display">--</span>
+                        </div>
+                        <button id="next-page">次へ</button>
+                    </div>
+                </div>
             </div>
             
-            <div id="shared-board" class="shared-board">
-                <!-- マーカーがここに動的に配置されます -->
-                <div class="board-grid-label">クリックして疑問点を配置</div>
+            <div id="shared-board" class="pdf-area">
+                <div id="pdf-container" class="pdf-page-container">
+                    <canvas id="pdf-canvas"></canvas>
+                </div>
             </div>
         </div>
 
@@ -43,16 +57,20 @@
                 📡 リアルタイム同期中
             </div>
 
+            <!-- PDFアップロードセクション -->
+            <div class="upload-section" style="background: var(--bg-card); padding: 15px; border-radius: 12px; border: 1px dashed var(--border);">
+                <label for="pdf-upload">📁 PDFを共有する</label>
+                <input type="file" id="pdf-upload" accept="application/pdf" style="font-size: 0.8rem; color: var(--text-secondary);">
+            </div>
+
             <!-- 不明点マーク作成用フォーム (最初から常に表示) -->
             <div id="form-content">
                 <h3>🙋‍♂️ 新しいマークを追加</h3>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin-top: -8px; margin-bottom: 15px;">
-                    左側のボード上のわからない部分をクリックして選択してください。
-                </p>
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 4px 0 12px 0;">左側の資料をクリックして場所を選択してください。</p>
                 
                 <div style="margin-bottom: 12px;">
-                    <label>選択中の座標:</label>
-                    <span id="coord-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">未選択 (ボードをクリック)</span>
+                    <label>現在の選択状態:</label>
+                    <span id="coord-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">ボードをクリックして場所を指定してください</span>
                 </div>
 
                 <div style="margin-bottom: 15px;">
@@ -64,17 +82,17 @@
             </div>
 
             <!-- マーク記録一覧 -->
-            <div style="border-top: 1px solid #475569; padding-top: 20px; display: flex; flex-direction: column; gap: 15px; flex-grow: 1;">
+            <div class="markers-section-wrapper">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h3 style="margin: 0;">マーク一覧 <span class="marker-count" id="marker-count">0</span></h3>
-                    <div style="display: flex; gap: 5px;">
-                        <button id="export-btn" style="padding: 5px 10px; font-size: 0.7rem; width: auto;">保存</button>
-                        <button id="import-btn" style="padding: 5px 10px; font-size: 0.7rem; width: auto; background:#475569;">読込</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="export-btn" class="small-btn">保存</button>
+                        <button id="import-btn" class="small-btn" style="background:#475569;">読込</button>
                         <input type="file" id="import-file" accept=".json" style="display: none;">
                     </div>
                 </div>
                 
-                <div id="marker-list" style="font-size: 0.85rem; max-height: 350px; overflow-y: auto; flex-grow: 1;">
+                <div id="marker-list" class="marker-list-scrollarea" style="font-size: 0.8rem;">
                     まだマークはありません。
                 </div>
                 
