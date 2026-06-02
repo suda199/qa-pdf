@@ -3,77 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム講義 PDF ＆ 不明点共有システム</title>
+    <title>リアルタイム 不明点 ＆ 質問共有ボード</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Libraries -->
-    <script src="/pdfjs/pdf.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- メイン画面 (エントリ画面なしで直接表示) -->
+    <!-- メイン画面 (直接共有ボードを表示) -->
     <div id="main-app">
-        <!-- 左側：PDF表示エリア -->
-        <div class="pdf-area" id="pdf-container">
-            <div style="color:#94a3b8; text-align:center; padding:40px; font-size:1.1rem; margin-top:20vh;">
-                <p style="font-size:3rem; margin-bottom:10px;">📄</p>
-                <p style="font-weight:600; color:#f8fafc; margin-bottom:5px;">PDFが共有されていません</p>
-                <p style="font-size:0.9rem; color:#64748b;">右側のエリアからPDFを選択して共有するか、<br>他のメンバーが共有するのをお待ちください。</p>
+        <!-- 左側：共有ボードエリア -->
+        <div class="board-area">
+            <div class="board-header">
+                <h2>📍 リアルタイム共有ボード (講義・発表スライド見立て)</h2>
+                <p>ボード上の疑問・気になる部分をクリックしてマークを追加してください。</p>
+            </div>
+            
+            <div id="shared-board" class="shared-board">
+                <!-- マーカーがここに動的に配置されます -->
+                <div class="board-grid-label">クリックして疑問点を配置</div>
             </div>
         </div>
 
         <!-- 右側：操作パネル -->
         <div class="form-area">
-            <h2>📖 PDF 自動共有システム</h2>
+            <h2>💬 操作パネル</h2>
             
-            <!-- 1. PDFアップロード＆ドロップエリア -->
-            <div id="pdf-share-box" class="share-box">
-                <label for="pdf-upload" class="share-label">
-                    <span class="share-icon">📁</span>
-                    <span class="share-text">
-                        <strong>PDFファイルを選択</strong><br>
-                        またはここにドラッグ＆ドロップして自動共有
-                    </span>
-                </label>
-                <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
-            </div>
-
             <!-- 同期とステータス表示 -->
             <div id="sync-status" class="status-badge" style="display: none;">
                 🔄 接続中...
             </div>
             
-            <div id="lock-indicator" class="status-badge" style="display: none; background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2);">
-                📡 共有中のPDF: <span id="shared-pdf-name" style="font-weight: 600;">未共有</span>
+            <div class="status-badge" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2);">
+                📡 リアルタイム同期中
             </div>
 
-            <!-- 2. 不明点マーク作成用フォーム (PDFがロードされたら表示) -->
-            <div id="form-content" style="display:none;">
-                <h3>🙋‍♂️ 不明点をマークする</h3>
+            <!-- 不明点マーク作成用フォーム (最初から常に表示) -->
+            <div id="form-content">
+                <h3>🙋‍♂️ 新しいマークを追加</h3>
                 <p style="font-size: 0.8rem; color: #94a3b8; margin-top: -8px; margin-bottom: 15px;">
-                    PDF上のわからない部分を直接クリックしてください。
+                    左側のボード上のわからない部分をクリックして選択してください。
                 </p>
                 
                 <div style="margin-bottom: 12px;">
-                    <label>選択中の位置:</label>
-                    <span id="page-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">未選択</span>
+                    <label>選択中の座標:</label>
+                    <span id="coord-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">未選択 (ボードをクリック)</span>
                 </div>
 
                 <div style="margin-bottom: 15px;">
                     <label for="reason">わからない理由・質問内容</label>
-                    <textarea id="reason" placeholder="例: この数式の展開がわかりません。もう少し詳しく解説してください。"></textarea>
+                    <textarea id="reason" placeholder="例: このあたりの説明をもう少し詳しく聞きたいです！"></textarea>
                 </div>
 
                 <button id="add-btn">📍 マークを確定して全員に共有</button>
             </div>
 
-            <!-- 3. マーク記録一覧 -->
-            <div style="border-top: 1px solid #475569; padding-top: 20px; display: flex; flex-direction: column; gap: 15px;">
+            <!-- マーク記録一覧 -->
+            <div style="border-top: 1px solid #475569; padding-top: 20px; display: flex; flex-direction: column; gap: 15px; flex-grow: 1;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h3 style="margin: 0;">マーク一覧 <span class="marker-count" id="marker-count">0</span></h3>
                     <div style="display: flex; gap: 5px;">
@@ -83,12 +74,12 @@
                     </div>
                 </div>
                 
-                <div id="marker-list" style="font-size: 0.85rem; max-height: 250px; overflow-y: auto;">
+                <div id="marker-list" style="font-size: 0.85rem; max-height: 350px; overflow-y: auto; flex-grow: 1;">
                     まだマークはありません。
                 </div>
                 
                 <p style="font-size: 0.7rem; color: #64748b; line-height: 1.4; margin: 0;">
-                    ※ 誰かがマークを追加すると、このリストとPDF上の位置にリアルタイムに反映されます。
+                    ※ 誰かがマークを追加すると、このリストとボード上の位置にリアルタイムに反映されます。
                 </p>
                 
                 <div id="network-info" style="font-size: 0.7rem; color: #64748b;">
@@ -98,7 +89,7 @@
         </div>
     </div>
 
-    <!-- ⚠️ システムエラー検知用デバッグコンソールパネル (Windowsレジストリバグやその他エラーの原因究明用) -->
+    <!-- ⚠️ システムエラー検知用デバッグコンソールパネル -->
     <div id="debug-error-console" style="display:none; position:fixed; bottom:0; left:0; width:100%; max-height:160px; background:#fef2f2; color:#991b1b; border-top:3px solid #f87171; z-index:9999; font-family:monospace; font-size:0.8rem; overflow-y:auto; padding:15px; box-sizing:border-box; box-shadow: 0 -10px 30px rgba(0,0,0,0.5);">
         <div style="font-weight:bold; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #fca5a5; padding-bottom:5px;">
             <span>⚠️ ブラウザエラーを検知しました (エラー原因のデバッグログ)</span>
