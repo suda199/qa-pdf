@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>講義テキスト閲覧 ＆ 質問システム</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; }
+        /* 左側：PDFエリア */
+        .pdf-area { width: 70%; height: 100%; border-right: 2px solid #ccc; }
+        iframe { width: 100%; height: 100%; border: none; }
+        /* 右側：質問エリア */
+        .form-area { width: 30%; padding: 20px; box-sizing: border-box; background: #f9f9f9; display: flex; flex-direction: column; gap: 15px; }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #333; }
+        label { font-weight: bold; font-size: 0.9rem; }
+        input, textarea, button { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        textarea { height: 100px; resize: none; }
+        button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .success-msg { color: green; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="pdf-area" id="pdf-container"></div>
+
+    <div class="form-area">
+        <h2>🙋‍♂️ わからないところを教えてください（匿名）</h2>
+        <p style="font-size: 0.8rem; color: #666;">※名前は送信されません。安心して入力してください。</p>
+        
+        <div>
+            <label for="page">該当するページ数</label>
+            <input type="number" id="page" placeholder="例: 5" min="1">
+        </div>
+
+        <div>
+            <label for="reason">理由・わからない内容</label>
+            <textarea id="reason" placeholder="例: ○○という用語の意味がよくわかりませんでした。"></textarea>
+        </div>
+
+        <button onclick="sendQuestion()">送信する</button>
+        <p id="success" class="success-msg">送信しました！ご協力ありがとうございます。</p>
+    </div>
+
+    <script>
+        // ======= 【設定箇所】 =======
+        const SUPABASE_URL = "https://jsfnaxvnxnarztdssqwu.supabase.co"; 
+        const SUPABASE_ANON_KEY = "sb_publishable_eZHk9B0XtyWON9IxKlWwHg_oH1B49l5"; 
+        const BUCKET_NAME = "pdfs"; 
+        const FILE_NAME = "java-introduction-seminar-text.pdf"; // ★実際のPDFファイル名に書き換えてください！
+        // ============================
+
+        // Supabaseの初期化（Sは大文字）
+        //const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // PDFの読み込み
+        const pdfUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${FILE_NAME}`;
+        document.getElementById("pdf-container").innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
+
+        // データの送信処理
+        async function sendQuestion() {
+            const pageNum = document.getElementById("page").value;
+            const reasonText = document.getElementById("reason").value;
+
+            if (!pageNum || !reasonText) {
+                alert("ページ数と理由を入力してください。");
+                return;
+            }
+
+            // Supabaseのquestionsテーブルにデータを挿入
+            const { data, error } = await supabase
+                .from('questions')
+                .insert([
+                    { page_num: parseInt(pageNum), reason: reasonText }
+                ]);
+
+            if (error) {
+                alert("送信に失敗しました: " + error.message);
+                console.error(error);
+            } else {
+                // 成功メッセージの表示とフォームのクリア
+                document.getElementById("success").style.display = "block";
+                document.getElementById("page").value = "";
+                document.getElementById("reason").value = "";
+                
+                setTimeout(() => {
+                    document.getElementById("success").style.display = "none";
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
