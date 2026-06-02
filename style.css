@@ -314,6 +314,26 @@ button:active {
     border-left-color: var(--success);
 }
 
+/* 解決済みマーカーのスタイル */
+.marker-item.resolved {
+    border-left-color: var(--text-secondary);
+    opacity: 0.6;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.marker-item.resolved .marker-info {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.resolve-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    width: auto;
+}
+
 .marker-info {
     font-size: 0.8rem;
     font-weight: 700;

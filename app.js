@@ -128,13 +128,13 @@ window.addEventListener('resize', () => {
 });
 
 // --- 4. マーカー追加 (自分・他人共通) ---
-function addMarkerToUI(x, y, reason, page) {
+function addMarkerToUI(x, y, reason, page, resolved = false) {
     const targetPage = page || currentPageNum;
     const id = `${targetPage}-${Number(x).toFixed(2)}-${Number(y).toFixed(2)}-${reason}`;
     if (markerIds.has(id)) return;
     markerIds.add(id);
 
-    const markerData = { x, y, reason, page: targetPage };
+    const markerData = { x, y, reason, page: targetPage, resolved };
     markers.push(markerData);
 
     refreshMarkersUI();
@@ -219,14 +219,27 @@ function updateMarkerListUI() {
     
     list.innerHTML = '';
     markers.forEach((m, index) => {
+        const mId = `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
         const item = document.createElement('div');
-        item.className = 'marker-item';
+        item.className = `marker-item ${m.resolved ? 'resolved' : ''}`;
         item.innerHTML = `
-            <div class="marker-info">PAGE ${m.page}</div>
-            <div class="marker-text">${m.reason}</div>
+            <div style="display:flex; justify-content:space-between; align-items:start;">
+                <div class="marker-info">PAGE ${m.page}</div>
+                <button class="resolve-btn small-btn" style="padding: 2px 6px !important;">
+                    ${m.resolved ? '↩️ 未解決に戻す' : '✅ 解決済みにする'}
+                </button>
+            </div>
+            <div class="marker-text" style="${m.resolved ? 'text-decoration: line-through; color: var(--text-secondary);' : ''}">${m.reason}</div>
         `;
+
+        // 解決ボタンのクリックイベント
+        item.querySelector('.resolve-btn').onclick = (e) => {
+            e.stopPropagation();
+            socket.emit('toggle-marker-resolved', mId);
+        };
+
         // クリックで該当ページへ移動
-        item.onclick = () => renderPage(m.page);
+        item.onclick = () => { if(!m.resolved) renderPage(m.page); };
         list.appendChild(item);
     });
 }
@@ -309,7 +322,18 @@ socket.on('pdf-updated', (pdfData) => {
 // 2. マーカー個別受信
 socket.on('marker-added', (data) => {
     if (data) {
-        addMarkerToUI(data.x, data.y, data.reason, data.page);
+        addMarkerToUI(data.x, data.y, data.reason, data.page, data.resolved);
+    }
+});
+
+// 3. マーカー解決状態の更新受信
+socket.on('marker-resolved-updated', (data) => {
+    const marker = markers.find(m => 
+        `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}` === data.id
+    );
+    if (marker) {
+        marker.resolved = data.resolved;
+        refreshMarkersUI();
     }
 });
 
@@ -318,7 +342,7 @@ socket.on('markers-initialized', (markersList) => {
     clearAllMarkersUI();
     if (markersList) {
         markersList.forEach(m => {
-            addMarkerToUI(m.x, m.y, m.reason, m.page);
+            addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved);
         });
     }
 });

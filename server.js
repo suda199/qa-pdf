@@ -87,9 +87,22 @@ io.on('connection', (socket) => {
         // 重複チェック
         const exists = markers.some(m => `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}` === id);
         if (!exists) {
-            markers.push(markerData);
+            const newMarker = { ...markerData, resolved: false };
+            markers.push(newMarker);
             // 送信者以外を含む全員にブロードキャスト
-            io.emit('marker-added', markerData);
+            io.emit('marker-added', newMarker);
+        }
+    });
+
+    // マーカーの解決状態を切り替え
+    socket.on('toggle-marker-resolved', (markerId) => {
+        const marker = markers.find(m => 
+            `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}` === markerId
+        );
+        if (marker) {
+            marker.resolved = !marker.resolved;
+            // 更新された状態を全員に通知
+            io.emit('marker-resolved-updated', { id: markerId, resolved: marker.resolved });
         }
     });
 
