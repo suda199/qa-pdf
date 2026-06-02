@@ -1,0 +1,291 @@
+:root {
+    --primary-color: #4f46e5;
+    --primary-hover: #4338ca;
+    --bg-app: #0f172a;
+    --bg-sidebar: #1e293b;
+    --bg-card: #334155;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --border-color: #475569;
+    --accent-color: #10b981;
+    --shadow-premium: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+body { 
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+    margin: 0; 
+    padding: 0; 
+    display: flex; 
+    flex-direction: column;
+    height: 100vh;
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    overflow: hidden;
+}
+
+/* メイン画面 */
+#main-app {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    width: 100%;
+}
+
+.pdf-area { 
+    width: 70%; 
+    height: 100%; 
+    overflow-y: auto; 
+    background: #0b0f19; 
+    padding: 30px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+}
+
+.pdf-page-container { 
+    position: relative; 
+    margin: 0 auto 30px auto; 
+    box-shadow: var(--shadow-premium);
+    background: white; 
+    cursor: crosshair;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+}
+
+.pdf-page-container:hover {
+    transform: translateY(-2px);
+}
+
+canvas { 
+    display: block; 
+    width: 100%; 
+}
+
+.form-area { 
+    width: 30%; 
+    padding: 25px; 
+    box-sizing: border-box; 
+    background: var(--bg-sidebar); 
+    display: flex; 
+    flex-direction: column; 
+    gap: 20px;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+    z-index: 10;
+    border-left: 1px solid var(--border-color);
+    overflow-y: auto;
+}
+
+h2, h3 { 
+    margin-top: 0; 
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+h2 {
+    font-size: 1.25rem;
+    color: var(--text-main);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 8px;
+}
+
+h3 {
+    font-size: 1.05rem;
+    color: var(--text-main);
+}
+
+label { 
+    font-weight: 500; 
+    font-size: 0.85rem; 
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    display: block;
+}
+
+textarea { 
+    width: 100%; 
+    height: 90px; 
+    padding: 12px; 
+    box-sizing: border-box; 
+    border: 1px solid var(--border-color); 
+    border-radius: 8px; 
+    resize: none; 
+    font-size: 0.9rem;
+    background: var(--bg-card);
+    color: var(--text-main);
+    transition: all 0.2s ease;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.25);
+}
+
+button { 
+    width: 100%; 
+    padding: 12px; 
+    background: var(--primary-color); 
+    color: white; 
+    border: none; 
+    border-radius: 8px; 
+    font-weight: 600; 
+    cursor: pointer; 
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+button:hover { 
+    background: var(--primary-hover); 
+    transform: translateY(-1px);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+button:disabled { 
+    background: var(--border-color); 
+    color: var(--text-muted);
+    cursor: not-allowed; 
+    transform: none;
+}
+
+/* ドラッグ＆ドロップ 共有ボックス */
+.share-box {
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    background: rgba(30, 41, 59, 0.5);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.share-box.dragover {
+    border-color: var(--primary-color);
+    background: rgba(79, 70, 229, 0.1);
+    transform: scale(1.02);
+}
+
+.share-label {
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.share-icon {
+    font-size: 2rem;
+    animation: float 3s ease-in-out infinite;
+}
+
+.share-text {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+/* ステータスバッジ */
+.status-badge {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--accent-color);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* マーカー */
+.marker {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(239, 68, 68, 0.85);
+    border: 2px solid white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 5;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.marker:hover {
+    transform: translate(-50%, -50%) scale(1.2);
+    background-color: rgba(239, 68, 68, 1);
+    z-index: 15;
+}
+
+.marker:hover::after {
+    content: attr(data-reason);
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.95);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    white-space: normal;
+    min-width: 160px;
+    max-width: 240px;
+    z-index: 20;
+    pointer-events: none;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.temp-marker { 
+    background-color: rgba(59, 130, 246, 0.85) !important; 
+    border-style: dashed;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+    70% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+.marker-count {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: normal;
+}
+
+/* マーカーリスト項目 */
+.marker-item {
+    margin-bottom: 8px; 
+    padding: 10px; 
+    border-radius: 6px;
+    background: var(--bg-card);
+    border-left: 3px solid var(--primary-color);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    transition: all 0.2s ease;
+}
+
+.marker-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.marker-item strong {
+    color: var(--primary-color);
+}

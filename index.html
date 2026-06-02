@@ -3,93 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>講義テキスト閲覧 ＆ 質問システム</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        body { font-family: sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; }
-        /* 左側：PDFエリア */
-        .pdf-area { width: 70%; height: 100%; border-right: 2px solid #ccc; }
-        iframe { width: 100%; height: 100%; border: none; }
-        /* 右側：質問エリア */
-        .form-area { width: 30%; padding: 20px; box-sizing: border-box; background: #f9f9f9; display: flex; flex-direction: column; gap: 15px; }
-        h2 { margin-top: 0; font-size: 1.2rem; color: #333; }
-        label { font-weight: bold; font-size: 0.9rem; }
-        input, textarea, button { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        textarea { height: 100px; resize: none; }
-        button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .success-msg { color: green; font-weight: bold; display: none; }
-    </style>
+    <title>リアルタイム講義 PDF ＆ 不明点共有システム</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Libraries -->
+    <script src="/pdfjs/pdf.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="pdf-area" id="pdf-container"></div>
-
-    <div class="form-area">
-        <h2>🙋‍♂️ わからないところを教えてください（匿名）</h2>
-        <p style="font-size: 0.8rem; color: #666;">※名前は送信されません。安心して入力してください。</p>
-        
-        <div>
-            <label for="page">該当するページ数</label>
-            <input type="number" id="page" placeholder="例: 5" min="1">
+    <!-- メイン画面 (エントリ画面なしで直接表示) -->
+    <div id="main-app">
+        <!-- 左側：PDF表示エリア -->
+        <div class="pdf-area" id="pdf-container">
+            <div style="color:#94a3b8; text-align:center; padding:40px; font-size:1.1rem; margin-top:20vh;">
+                <p style="font-size:3rem; margin-bottom:10px;">📄</p>
+                <p style="font-weight:600; color:#f8fafc; margin-bottom:5px;">PDFが共有されていません</p>
+                <p style="font-size:0.9rem; color:#64748b;">右側のエリアからPDFを選択して共有するか、<br>他のメンバーが共有するのをお待ちください。</p>
+            </div>
         </div>
 
-        <div>
-            <label for="reason">理由・わからない内容</label>
-            <textarea id="reason" placeholder="例: ○○という用語の意味がよくわかりませんでした。"></textarea>
-        </div>
+        <!-- 右側：操作パネル -->
+        <div class="form-area">
+            <h2>📖 PDF 自動共有システム</h2>
+            
+            <!-- 1. PDFアップロード＆ドロップエリア -->
+            <div id="pdf-share-box" class="share-box">
+                <label for="pdf-upload" class="share-label">
+                    <span class="share-icon">📁</span>
+                    <span class="share-text">
+                        <strong>PDFファイルを選択</strong><br>
+                        またはここにドラッグ＆ドロップして自動共有
+                    </span>
+                </label>
+                <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
+            </div>
 
-        <button onclick="sendQuestion()">送信する</button>
-        <p id="success" class="success-msg">送信しました！ご協力ありがとうございます。</p>
+            <!-- 同期とステータス表示 -->
+            <div id="sync-status" class="status-badge" style="display: none;">
+                🔄 接続中...
+            </div>
+            
+            <div id="lock-indicator" class="status-badge" style="display: none; background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2);">
+                📡 共有中のPDF: <span id="shared-pdf-name" style="font-weight: 600;">未共有</span>
+            </div>
+
+            <!-- 2. 不明点マーク作成用フォーム (PDFがロードされたら表示) -->
+            <div id="form-content" style="display:none;">
+                <h3>🙋‍♂️ 不明点をマークする</h3>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin-top: -8px; margin-bottom: 15px;">
+                    PDF上のわからない部分を直接クリックしてください。
+                </p>
+                
+                <div style="margin-bottom: 12px;">
+                    <label>選択中の位置:</label>
+                    <span id="page-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">未選択</span>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label for="reason">わからない理由・質問内容</label>
+                    <textarea id="reason" placeholder="例: この数式の展開がわかりません。もう少し詳しく解説してください。"></textarea>
+                </div>
+
+                <button id="add-btn">📍 マークを確定して全員に共有</button>
+            </div>
+
+            <!-- 3. マーク記録一覧 -->
+            <div style="border-top: 1px solid #475569; padding-top: 20px; display: flex; flex-direction: column; gap: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0;">マーク一覧 <span class="marker-count" id="marker-count">0</span></h3>
+                    <div style="display: flex; gap: 5px;">
+                        <button id="export-btn" style="padding: 5px 10px; font-size: 0.7rem; width: auto;">保存</button>
+                        <button id="import-btn" style="padding: 5px 10px; font-size: 0.7rem; width: auto; background:#475569;">読込</button>
+                        <input type="file" id="import-file" accept=".json" style="display: none;">
+                    </div>
+                </div>
+                
+                <div id="marker-list" style="font-size: 0.85rem; max-height: 250px; overflow-y: auto;">
+                    まだマークはありません。
+                </div>
+                
+                <p style="font-size: 0.7rem; color: #64748b; line-height: 1.4; margin: 0;">
+                    ※ 誰かがマークを追加すると、このリストとPDF上の位置にリアルタイムに反映されます。
+                </p>
+                
+                <div id="network-info" style="font-size: 0.7rem; color: #64748b;">
+                    ネットワーク: 接続確認中...
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script>
-        // ======= 【設定箇所】 =======
-        const SUPABASE_URL = "https://jsfnaxvnxnarztdssqwu.supabase.co"; 
-        const SUPABASE_ANON_KEY = "sb_publishable_eZHk9B0XtyWON9IxKlWwHg_oH1B49l5"; 
-        const BUCKET_NAME = "pdfs"; 
-        const FILE_NAME = "java-introduction-seminar-text.pdf"; // ★実際のPDFファイル名に書き換えてください！
-        // ============================
-
-        // Supabaseの初期化（Sは大文字）
-        //const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        // PDFの読み込み
-        const pdfUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${FILE_NAME}`;
-        document.getElementById("pdf-container").innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
-
-        // データの送信処理
-        async function sendQuestion() {
-            const pageNum = document.getElementById("page").value;
-            const reasonText = document.getElementById("reason").value;
-
-            if (!pageNum || !reasonText) {
-                alert("ページ数と理由を入力してください。");
-                return;
-            }
-
-            // Supabaseのquestionsテーブルにデータを挿入
-            const { data, error } = await supabase
-                .from('questions')
-                .insert([
-                    { page_num: parseInt(pageNum), reason: reasonText }
-                ]);
-
-            if (error) {
-                alert("送信に失敗しました: " + error.message);
-                console.error(error);
-            } else {
-                // 成功メッセージの表示とフォームのクリア
-                document.getElementById("success").style.display = "block";
-                document.getElementById("page").value = "";
-                document.getElementById("reason").value = "";
-                
-                setTimeout(() => {
-                    document.getElementById("success").style.display = "none";
-                }, 3000);
-            }
-        }
-    </script>
+    <script src="app.js"></script>
 </body>
 </html>

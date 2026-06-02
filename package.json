@@ -1,0 +1,16 @@
+{
+  "name": "qa-pdf",
+  "version": "1.0.0",
+  "description": "Lecture PDF viewer and real-time Q&A system for local environment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.5",
+    "pdfjs-dist": "3.11.174"
+  }
+}
