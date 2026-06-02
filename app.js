@@ -1,8 +1,47 @@
-// --- 1. pdf.js 初期化 (ローカルに切り替えてオフライン対応を完全保証) ---
+// --- 0. グローバルエラーキャッチャー（デバッグログ可視化） ---
+window.addEventListener('error', function(e) {
+    // ブラウザ拡張機能（Chrome/Edge Extension）に起因する無害なエラーはデバッグパネルに出さないように無視
+    if (e.filename && (e.filename.includes('chrome-extension://') || e.filename.includes('extension'))) {
+        return;
+    }
+    const messageStr = e.message || '';
+    if (messageStr.includes('message channel closed') || messageStr.includes('A listener indicated an asynchronous response')) {
+        return;
+    }
+
+    const consoleEl = document.getElementById('debug-error-console');
+    const listEl = document.getElementById('debug-error-list');
+    if (consoleEl && listEl) {
+        consoleEl.style.display = 'block';
+        listEl.innerHTML += `❌ 【JSエラー】: ${e.message}\n   場所: ${e.filename} (${e.lineno}行目:${e.colno}文字目)\n\n`;
+    }
+});
+window.addEventListener('unhandledrejection', function(e) {
+    const reasonStr = e.reason ? (e.reason.message || String(e.reason)) : '';
+    
+    // ブラウザ拡張機能に起因する無害なエラー（Message channel closedなど）は無視
+    if (reasonStr.includes('message channel closed') || 
+        reasonStr.includes('A listener indicated an asynchronous response') ||
+        (e.reason && e.reason.stack && e.reason.stack.includes('chrome-extension://'))) {
+        return;
+    }
+
+    const consoleEl = document.getElementById('debug-error-console');
+    const listEl = document.getElementById('debug-error-list');
+    if (consoleEl && listEl) {
+        consoleEl.style.display = 'block';
+        listEl.innerHTML += `❌ 【非同期エラー (Promise)】: ${e.reason}\n\n`;
+    }
+});
+
+// --- 1. pdf.js 初期化 (ローカル配信) ---
 if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js';
+    console.log("PDF.js は正常に読み込まれました。");
 } else {
-    console.error("pdfjsLib が読み込まれていません。自サーバーの /pdfjs/pdf.min.js が正しく読み込まれているか確認してください。");
+    const errMsg = "pdfjsLib が定義されていません。自サーバーの /pdfjs/pdf.min.js のロードに失敗している可能性があります。";
+    console.error(errMsg);
+    alert("⚠️ エラー: PDF描画ライブラリのロードに失敗しました。ページを再読み込みしてください。");
 }
 
 // --- 2. Socket.io 初期化（file://アクセス対策） ---
@@ -16,11 +55,7 @@ if (typeof io !== 'undefined') {
                      "http://localhost:3000";
     alert(errorMsg);
     console.error(errorMsg);
-    // スクリプト継続のためのモック
-    socket = {
-        on: () => {},
-        emit: () => {}
-    };
+    socket = { on: () => {}, emit: () => {} };
 }
 
 // --- 3. アプリケーション状態 ---
@@ -31,8 +66,8 @@ let isPdfLoading = false;
 const renderedPages = new Set();
 const markerIds = new Set();
 
-// 遅延レンダリング用の監視インスタンス
-let pageObserver = null;
+// レンダリング中断用のキャンセラー
+let currentRenderSessionId = 0;
 
 // --- 4. ドラッグ＆ドロップ ＆ ファイル選択による自動共有 ---
 const shareBox = document.getElementById('pdf-share-box');
@@ -69,12 +104,13 @@ fileInput.addEventListener('change', (e) => {
 
 // PDFファイルをアップロードして全員に自動共有
 async function uploadAndSharePdf(file) {
+    console.log("PDFファイルを選択しました:", file.name);
     // 1. ローカルプレビュー
     // 最もブラウザ互換性が高く、メモリ消費量が少ない ArrayBuffer 方式を採用
     const reader = new FileReader();
     reader.onload = async function() {
+        console.log("ファイルのArrayBuffer読み込みが完了しました。レンダリングを開始します。");
         const arrayBuffer = this.result;
-        // ArrayBufferを直接 pdf.js に渡して一瞬でロード
         await loadPdf({ data: arrayBuffer });
         document.getElementById('lock-indicator').style.display = 'block';
         document.getElementById('shared-pdf-name').innerText = file.name;
@@ -95,8 +131,8 @@ async function uploadAndSharePdf(file) {
             body: formData
         });
         if (response.ok) {
+            console.log("PDFのアップロードと自動共有が完了しました。");
             shareText.innerHTML = originalText;
-            // サーバー側で Socket.io の 'pdf-updated' が配信され、他全員に自動描画されます
         } else {
             const errData = await response.json();
             alert("自動共有エラー: " + (errData.error || "アップロードに失敗しました。"));
@@ -109,47 +145,44 @@ async function uploadAndSharePdf(file) {
     }
 }
 
-// --- 5. PDF描画ロジック（超軽量遅延ロード対応） ---
+// --- 5. PDF描画ロジック（超安定・非同期順次ロード対応） ---
 async function loadPdf(pdfSource) {
     if (isPdfLoading) return;
     isPdfLoading = true;
+    
+    // 新しい描画セッションIDを発行して古い非同期処理をキャンセルする
+    const sessionId = ++currentRenderSessionId;
+    console.log(`新しいPDFロードセッションを開始しました (Session: ${sessionId})`);
+
     try {
-        // PDFが読み込まれたらマーク作成用フォームを表示
+        // マーカー作成用フォームを表示
         document.getElementById('form-content').style.display = 'block';
         
         const container = document.getElementById("pdf-container");
-        container.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px;">PDFを解析中...</div>';
+        container.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px;font-size:1.1rem;margin-top:20vh;">PDFドキュメントを解析中...</div>';
         
         renderedPages.clear();
 
-        // 既存の Observer があれば切断
-        if (pageObserver) {
-            pageObserver.disconnect();
+        let loadingParams = {};
+        if (typeof pdfSource === 'string') {
+            loadingParams.url = pdfSource;
+        } else if (pdfSource && pdfSource.data) {
+            loadingParams.data = pdfSource.data;
+        } else {
+            loadingParams = pdfSource;
         }
+        
+        // 日本語（CJK）フォントの文字化け・表示崩れを防ぐための cMap 設定を追加
+        loadingParams.cMapUrl = '/pdfjs-cmaps/';
+        loadingParams.cMapPacked = true;
 
-        const loadingTask = pdfjsLib.getDocument(pdfSource);
+        const loadingTask = pdfjsLib.getDocument(loadingParams);
         currentPdf = await loadingTask.promise;
         container.innerHTML = ""; 
+        console.log(`PDFドキュメントの解析に成功しました。総ページ数: ${currentPdf.numPages}`);
 
-        // 遅延レンダリング用の IntersectionObserver の初期化
-        // 画面外 600px に入った時点で先行レンダリングを開始し、ユーザーを待たせないようにする
-        const observerOptions = {
-            root: container,
-            rootMargin: "600px 0px",
-            threshold: 0.01
-        };
-
-        pageObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const pageNum = parseInt(entry.target.dataset.page, 10);
-                    renderPage(pageNum, entry.target);
-                    pageObserver.unobserve(entry.target); // 描画完了したら監視を解除して負荷低減
-                }
-            });
-        }, observerOptions);
-
-        // まず全ページの「プレースホルダー枠」を一瞬で作成し、スクロールバーを完成させる
+        // 1. まず全ページの「プレースホルダー枠」を一瞬で作成し、スクロールバーを完成させる
+        const pageContainers = [];
         for (let i = 1; i <= currentPdf.numPages; i++) {
             const pageContainer = document.createElement("div");
             pageContainer.className = "pdf-page-container";
@@ -166,16 +199,50 @@ async function loadPdf(pdfSource) {
             pageContainer.innerHTML = `<div style="color:#64748b; font-size:0.9rem;">${i} / ${currentPdf.numPages} ページ目を読み込み中...</div>`;
             
             container.appendChild(pageContainer);
-
-            // このプレースホルダーのスクロール監視を開始
-            pageObserver.observe(pageContainer);
+            pageContainers.push(pageContainer);
         }
+
+        // 2. 非同期で1ページずつ順番にバックグラウンドレンダリングを開始する
+        // setTimeoutを挟むことで、ブラウザのメインスレッドをブロックせず、1ページ目が即表示されます
+        renderPagesSequentially(1, pageContainers, sessionId);
+
     } catch (err) {
-        console.error(err);
-        alert("PDFの読み込みに失敗しました。ファイルが破損しているか、対応していない形式です。");
+        console.error("PDFのロード失敗:", err);
+        throw new Error(`PDFドキュメントの読み込み処理に失敗しました。詳細: ${err.message}`);
     } finally {
         isPdfLoading = false;
     }
+}
+
+// ページを順次非同期でレンダリングするシーケンシャルハンドラー
+function renderPagesSequentially(pageNum, pageContainers, sessionId) {
+    // セッションIDが変更されている場合は描画処理を中断
+    if (sessionId !== currentRenderSessionId) {
+        console.log(`セッション ${sessionId} はキャンセルされました。`);
+        return;
+    }
+
+    if (pageNum > currentPdf.numPages) {
+        console.log("すべてのページのレンダリングが完了しました。");
+        return; 
+    }
+
+    const container = pageContainers[pageNum - 1];
+
+    // 50ms のインターバルを挟んで非同期にレンダリングを実行
+    setTimeout(async () => {
+        if (sessionId !== currentRenderSessionId) return; // 中断チェック
+        
+        try {
+            await renderPage(pageNum, container);
+            // 成功したら次のページへ
+            renderPagesSequentially(pageNum + 1, pageContainers, sessionId);
+        } catch (err) {
+            console.error(`ページ ${pageNum} レンダリングエラー:`, err);
+            // エラーが起きても止まらずに次のページに進む
+            renderPagesSequentially(pageNum + 1, pageContainers, sessionId);
+        }
+    }, 40);
 }
 
 // 画面内に入った特定のページのみを実描画する関数
@@ -223,8 +290,9 @@ async function renderPage(pageNum, pageContainer) {
         });
 
     } catch (err) {
-        console.error(`ページ ${pageNum} レンダリングエラー:`, err);
+        console.error(`ページ ${pageNum} 実描画エラー:`, err);
         pageContainer.innerHTML = `<div style="color:#ef4444; font-size:0.85rem; padding: 20px;">ページの描画に失敗しました。</div>`;
+        throw err;
     }
 }
 
@@ -239,7 +307,6 @@ function addMarkerToUI(page, x, y, reason) {
 
     // 該当ページがすでに描画済みなら即座に配置
     const container = document.querySelector(`.pdf-page-container[data-page="${page}"]`);
-    // 描画済み（かつ読み込み中テキストがクリアされている場合のみ追加可能）
     if (container && renderedPages.has(page)) {
         const marker = document.createElement("div");
         marker.className = "marker";

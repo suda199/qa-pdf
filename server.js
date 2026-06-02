@@ -37,15 +37,42 @@ const upload = multer({
     }
 });
 
-// 静的ファイルの提供
-app.use(express.static(__dirname));
+// Windowsのレジストリ破損等による「.jsがtext/plainと誤認識されてブラウザにブロックされる問題」の対策
+const serveStaticOptions = {
+    setHeaders: (res, filepath) => {
+        const ext = path.extname(filepath).toLowerCase();
+        if (ext === '.js' || filepath.endsWith('.mjs')) {
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        } else if (ext === '.css') {
+            res.setHeader('Content-Type', 'text/css; charset=utf-8');
+        } else if (ext === '.json') {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        }
+    }
+};
+
+// 静的ファイルの提供 (MIMEタイプ対策付き)
+app.use(express.static(__dirname, serveStaticOptions));
 app.use('/uploads', express.static(uploadsDir));
 
-// pdfjs-dist のローカル静的配信（外部CDNへの依存を100%排除してオフライン対応）
-app.use('/pdfjs', express.static(path.join(__dirname, 'node_modules', 'pdfjs-dist', 'build')));
+// pdfjs-dist のローカル静的配信 (MIMEタイプ対策付き)
+app.use('/pdfjs', express.static(path.join(__dirname, 'node_modules', 'pdfjs-dist', 'build'), serveStaticOptions));
+app.use('/pdfjs-cmaps', express.static(path.join(__dirname, 'node_modules', 'pdfjs-dist', 'cmaps')));
 
 // サーバー状態の管理
-let currentPdf = null; // { name: 'filename.pdf', url: '/uploads/shared.pdf' }
+let currentPdf = null; 
+const initialPdfPath = path.join(uploadsDir, 'shared.pdf');
+console.log(`[Startup] checking initial PDF path: ${initialPdfPath}`);
+if (fs.existsSync(initialPdfPath)) {
+    currentPdf = {
+        name: 'shared.pdf',
+        url: '/uploads/shared.pdf',
+        timestamp: fs.statSync(initialPdfPath).mtimeMs
+    };
+    console.log(`[Startup] Found initial PDF:`, currentPdf);
+} else {
+    console.log(`[Startup] No initial PDF found at path.`);
+}
 let markers = [];
 
 // PDFアップロード用API
@@ -75,7 +102,10 @@ io.on('connection', (socket) => {
 
     // 新規接続ユーザーに現在の状態を同期
     if (currentPdf) {
+        console.log(`[Socket] Sending pdf-initialized to ${socket.id}:`, currentPdf);
         socket.emit('pdf-initialized', currentPdf);
+    } else {
+        console.log(`[Socket] No current PDF to send to ${socket.id}`);
     }
     if (markers.length > 0) {
         socket.emit('markers-initialized', markers);
