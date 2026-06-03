@@ -45,9 +45,14 @@ app.use('/uploads', express.static(uploadsDir));
 let currentPdf = null; // { name: 'filename.pdf', url: '/uploads/shared.pdf' }
 let markers = [];
 let currentPage = 1;
+let isLocked = false;
 
 // PDFアップロード用API
 app.post('/upload', upload.single('pdf'), (req, res) => {
+    if (isLocked) {
+        return res.status(403).json({ error: 'ボードがロックされています。新しいファイルをアップロードするにはロックを解除してください。' });
+    }
+
     if (!req.file) {
         return res.status(400).json({ error: 'ファイルがアップロードされませんでした。' });
     }
@@ -60,10 +65,12 @@ app.post('/upload', upload.single('pdf'), (req, res) => {
         url: `/uploads/shared.pdf?t=${Date.now()}`,
         timestamp: Date.now()
     };
+    isLocked = true;
 
     // 全クライアントに新しいPDFが配信されたことを通知
     io.emit('pdf-updated', currentPdf);
     io.emit('markers-cleared');
+    io.emit('lock-status-updated', isLocked);
 
     res.json({ success: true, pdf: currentPdf });
 });
@@ -79,6 +86,7 @@ io.on('connection', (socket) => {
     if (markers.length > 0) {
         socket.emit('markers-initialized', markers);
     }
+    socket.emit('lock-status-updated', isLocked);
 
     // マーカーの追加を受信
     socket.on('add-marker', (markerData) => {
@@ -116,6 +124,12 @@ io.on('connection', (socket) => {
     socket.on('clear-markers', () => {
         markers = [];
         io.emit('markers-cleared');
+    });
+
+    // ロック解除を受信
+    socket.on('unlock-pdf', () => {
+        isLocked = false;
+        io.emit('lock-status-updated', isLocked);
     });
 
     socket.on('disconnect', () => {

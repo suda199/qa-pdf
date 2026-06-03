@@ -23,7 +23,7 @@
             <div class="board-header">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <h2>📍 わかわかボード</h2>
+                        <h2>📍 わかわかツール</h2>
                         <p>テキストの疑問部分をクリックしてマークを追加してください。</p>
                     </div>
                     <div class="pagination-controls">
@@ -59,6 +59,11 @@
 
             <!-- PDFアップロードセクション -->
             <div class="upload-section" style="background: var(--bg-card); padding: 15px; border-radius: 12px; border: 1px dashed var(--border);">
+                <div id="lock-control-ui" style="display: none; align-items: center; gap: 10px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
+                    <span style="font-size: 0.8rem; color: #f87171; font-weight: 600;">🔒 ボード固定中</span>
+                    <button id="unlock-btn" class="small-btn" style="background: #ef4444; margin-left: auto; width: auto !important;">解除</button>
+                </div>
+                
                 <label for="pdf-upload">📁 PDFを共有する</label>
                 <input type="file" id="pdf-upload" accept="application/pdf" style="font-size: 0.8rem; color: var(--text-secondary);">
             </div>
@@ -100,8 +105,13 @@
                     ※ 誰かがマークを追加すると、このリストとボード上の位置にリアルタイムに反映されます。
                 </p>
                 
-                <div id="network-info" style="font-size: 0.7rem; color: #64748b;">
-                    ネットワーク: 接続確認中...
+                <div id="network-status-area" style="font-size: 0.7rem; color: #64748b; margin-top: 5px; display: flex; flex-direction: column; gap: 2px;">
+                    <div id="network-info-status">ネットワーク: 接続確認中...</div>
+                    <div id="last-ping-info">通信テスト: <a href="#" id="manual-ping-test" style="color: #3b82f6; text-decoration: underline;">今すぐ実行</a> <span id="last-ping-time">---</span></div>
+                    <!-- ブラウザ保存からの復元用ボタン -->
+                    <div id="storage-restore-area" style="display:none; margin-top:5px; padding:5px; background:rgba(59,130,246,0.1); border-radius:4px;">
+                        前回データあり: <a href="#" id="restore-btn" style="color:#60a5fa; font-weight:bold;">復元する</a>
+                    </div>
                 </div>
             </div>
         </div>
