@@ -391,3 +391,15 @@ document.getElementById("import-file").addEventListener("change", (e) => {
     };
     reader.readAsText(file);
 });
+
+// --- 8. Render.com スリープ防止機能 (10分おきに通信) ---
+function keepServerAlive() {
+    // サーバーのルートへfetchリクエストを送信してアクティブ状態を維持
+    fetch('/')
+        .then(() => {
+            const now = new Date().toLocaleTimeString();
+            console.log(`[Keep-Alive] サーバーに信号を送信しました: ${now}`);
+        })
+        .catch(err => console.error("[Keep-Alive] 通信エラー:", err));
+}
+setInterval(keepServerAlive, 1000 * 60 * 10); // 10分ごとに実行
