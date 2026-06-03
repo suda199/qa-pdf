@@ -135,6 +135,13 @@ function addMarkerToUI(x, y, reason, page, resolved = false) {
     markerIds.add(id);
 
     const markerData = { x, y, reason, page: targetPage, resolved };
+    
+    // 既存の同じ位置・内容のデータがあれば上書き、なければ追加
+    const existingIdx = markers.findIndex(m => 
+        m.page === targetPage && m.x === x && m.y === y && m.reason === reason
+    );
+    if (existingIdx !== -1) return;
+
     markers.push(markerData);
 
     refreshMarkersUI();
@@ -160,6 +167,9 @@ function refreshMarkersUI() {
         sharedBoard.appendChild(marker);
     });
     updateMarkerListUI();
+
+    // ブラウザのローカルストレージにバックアップ保存
+    localStorage.setItem('wakawaka_markers_backup', JSON.stringify(markers));
 }
 
 // --- 4.5 PDFレンダリング処理 ---
@@ -299,12 +309,12 @@ pdfUpload.addEventListener('change', async (e) => {
 
 // 1. ネットワーク監視
 socket.on('connect', () => {
-    const info = document.getElementById('network-info');
+    const info = document.getElementById('network-info-status');
     if (info) info.innerText = "ネットワーク: 接続中 (リアルタイム同期)";
 });
 
 socket.on('disconnect', () => {
-    const info = document.getElementById('network-info');
+    const info = document.getElementById('network-info-status');
     if (info) info.innerText = "ネットワーク: 切断されました。再接続中...";
 });
 
@@ -345,6 +355,33 @@ socket.on('markers-initialized', (markersList) => {
             addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved);
         });
     }
+
+    // サーバーが空っぽで、かつブラウザにバックアップがある場合に復元ボタンを表示
+    const backup = localStorage.getItem('wakawaka_markers_backup');
+    const restoreArea = document.getElementById('storage-restore-area');
+    if (markers.length === 0 && backup && JSON.parse(backup).length > 0) {
+        restoreArea.style.display = 'block';
+    } else if (restoreArea) {
+        restoreArea.style.display = 'none';
+    }
+});
+
+// 5. ロック状態の同期
+socket.on('lock-status-updated', (isLocked) => {
+    const lockUI = document.getElementById('lock-control-ui');
+    const uploadInput = document.getElementById('pdf-upload');
+    
+    if (isLocked) {
+        if (uploadInput) uploadInput.disabled = true;
+        if (lockUI) lockUI.style.display = 'flex';
+    } else {
+        if (uploadInput) uploadInput.disabled = false;
+        if (lockUI) lockUI.style.display = 'none';
+    }
+});
+
+document.getElementById('unlock-btn')?.addEventListener('click', () => {
+    socket.emit('unlock-pdf');
 });
 
 // 4. マーカー一括クリア
@@ -391,3 +428,15 @@ document.getElementById("import-file").addEventListener("change", (e) => {
     };
     reader.readAsText(file);
 });
+
+// --- 8. Render.com スリープ防止機能 (10分おきに通信) ---
+function keepServerAlive() {
+    // サーバーのルートへfetchリクエストを送信してアクティブ状態を維持
+    fetch('/')
+        .then(() => {
+            const now = new Date().toLocaleTimeString();
+            console.log(`[Keep-Alive] サーバーに信号を送信しました: ${now}`);
+        })
+        .catch(err => console.error("[Keep-Alive] 通信エラー:", err));
+}
+setInterval(keepServerAlive, 1000 * 60 * 10); // 10分ごとに実行
