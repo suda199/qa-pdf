@@ -12,6 +12,8 @@
     <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Vue 3 Global Build -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,90 +29,151 @@
                         <p>テキストの疑問部分をクリックしてマークを追加してください。</p>
                     </div>
                     <div class="pagination-controls">
-                        <button id="prev-page" style="background: var(--border);">前へ</button>
+                        <button id="prev-page" style="background: var(--border);" @click="prevPage">前へ</button>
                         <div id="page-info" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
-                            Page: <input type="number" id="current-page-input" value="1" min="1" class="page-num-input">
-                            / <span id="total-pages-display">--</span>
+                            Page: <input type="number" id="current-page-input" :value="currentPageNum" @keydown.enter="handlePageInput" @blur="handlePageBlur" min="1" :max="totalPages" class="page-num-input">
+                            / <span id="total-pages-display">{{ totalPages || '--' }}</span>
                         </div>
-                        <button id="next-page">次へ</button>
+                        <button id="next-page" @click="nextPage">次へ</button>
                     </div>
                 </div>
             </div>
             
-            <div id="shared-board" class="pdf-area">
-                <div id="pdf-container" class="pdf-page-container">
-                    <canvas id="pdf-canvas"></canvas>
+            <div id="shared-board" class="pdf-area" ref="sharedBoard">
+                <div id="pdf-container" class="pdf-page-container" @click="handleBoardClick" ref="pdfContainer">
+                    <canvas id="pdf-canvas" ref="pdfCanvas"></canvas>
+                    
+                    <!-- 登録済みのマークを描画 -->
+                    <div 
+                        v-for="marker in currentPageMarkers" 
+                        :key="getMarkerId(marker)" 
+                        class="marker"
+                        :style="{ left: marker.x + '%', top: marker.y + '%' }"
+                        :data-reason="marker.reason"
+                        @click.stop="showMarkerReason(marker)"
+                    ></div>
+
+                    <!-- 一時マーク（位置決定中）を描画 -->
+                    <div 
+                        v-if="selectedData.x !== null" 
+                        class="marker temp-marker"
+                        :style="{ left: selectedData.x + '%', top: selectedData.y + '%' }"
+                    ></div>
                 </div>
             </div>
         </div>
 
+        <!-- つまみ（分割線） -->
+        <div class="resizer" @mousedown="startResize"></div>
+
         <!-- 右側：操作パネル -->
-        <div class="form-area">
+        <div class="form-area" :style="{ width: panelWidth + 'px' }">
             <h2>💬 操作パネル</h2>
             
-            <!-- 同期とステータス表示 -->
-            <div id="sync-status" class="status-badge" style="display: none;">
-                🔄 接続中...
-            </div>
-            
-            <div class="status-badge" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2);">
-                📡 リアルタイム同期中
+            <div class="status-badge" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); display: flex; justify-content: center; align-items: center; gap: 8px;">
+                <span>📡 リアルタイム同期中</span>
+                <span class="connection-count" style="background: rgba(96, 165, 250, 0.2); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">
+                    👤 {{ connectionCount }}
+                </span>
             </div>
 
             <!-- PDFアップロードセクション -->
-            <div class="upload-section" style="background: var(--bg-card); padding: 15px; border-radius: 12px; border: 1px dashed var(--border);">
-                <div id="lock-control-ui" style="display: none; align-items: center; gap: 10px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
-                    <span style="font-size: 0.8rem; color: #f87171; font-weight: 600;">🔒 ボード固定中</span>
-                    <button id="unlock-btn" class="small-btn" style="background: #ef4444; margin-left: auto; width: auto !important;">解除</button>
+            <div class="upload-section collapsible-section" :class="{ open: isUploadFormOpen }">
+                <div class="section-header" @click="isUploadFormOpen = !isUploadFormOpen">
+                    <h3 style="margin: 0; font-size: 1rem;">📁 PDFを共有する</h3>
+                    <span class="toggle-icon">{{ isUploadFormOpen ? '▼' : '▶' }}</span>
                 </div>
                 
-                <label for="pdf-upload">📁 PDFを共有する</label>
-                <input type="file" id="pdf-upload" accept="application/pdf" style="font-size: 0.8rem; color: var(--text-secondary);">
+                <div v-show="isUploadFormOpen" class="section-body">
+                    <div v-if="isLocked" style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
+                        <span style="font-size: 0.9rem; color: #f87171; font-weight: 600;">🔒 ボード固定中</span>
+                        <button class="small-btn" style="background: #ef4444; margin-left: auto; width: auto !important;" @click="unlockPdf">解除</button>
+                    </div>
+                    
+                    <label for="pdf-upload" style="font-size: 0.85rem; margin-bottom: 8px; display: block; color: var(--text-secondary);">新しいPDFをアップロード</label>
+                    <input type="file" id="pdf-upload" accept="application/pdf" style="font-size: 0.9rem; color: var(--text-secondary); width: 100%;" :disabled="isLocked" @change="uploadPdf">
+                </div>
             </div>
 
-            <!-- 不明点マーク作成用フォーム (最初から常に表示) -->
-            <div id="form-content">
-                <h3>🙋‍♂️ 新しいマークを追加</h3>
-                <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 4px 0 12px 0;">左側の資料をクリックして場所を選択してください。</p>
+            <!-- 不明点マーク作成用フォーム -->
+            <div id="form-content" class="collapsible-section" :class="{ open: isAddFormOpen }">
+                <div class="section-header" @click="isAddFormOpen = !isAddFormOpen">
+                    <h3>🙋‍♂️ 新しいマークを追加</h3>
+                    <span class="toggle-icon">{{ isAddFormOpen ? '▼' : '▶' }}</span>
+                </div>
                 
-                <div style="margin-bottom: 12px;">
-                    <label>現在の選択状態:</label>
-                    <span id="coord-display" style="font-size: 0.9rem; color: #60a5fa; font-weight: 600;">ボードをクリックして場所を指定してください</span>
-                </div>
+                <div v-show="isAddFormOpen" class="section-body">
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 4px 0 12px 0;">左側の資料をクリックして場所を選択してください。</p>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label>現在の選択状態:</label>
+                        <span v-if="selectedData.x !== null" style="font-size: 1.0rem; color: #60a5fa; font-weight: 600;">
+                            位置を選択しました (Page {{ currentPageNum }})
+                        </span>
+                        <span v-else style="font-size: 1.0rem; color: var(--text-secondary); font-weight: 400;">
+                            ボードをクリックして場所を指定してください
+                        </span>
+                    </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label for="reason">わからないところ・質問内容</label>
-                    <textarea id="reason" placeholder="例: このあたりの説明をもう少し詳しく聞きたいです！"></textarea>
-                </div>
+                    <div style="margin-bottom: 15px;">
+                        <label for="reason">わからないところ・質問内容</label>
+                        <textarea id="reason" v-model="reason" placeholder="例: このあたりの説明をもう少し詳しく聞きたいです！"></textarea>
+                    </div>
 
-                <button id="add-btn">📍 マークを確定</button>
+                    <button id="add-btn" @click="addMarker">📍 マークを確定</button>
+                </div>
             </div>
 
             <!-- マーク記録一覧 -->
             <div class="markers-section-wrapper">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin: 0;">マーク一覧 <span class="marker-count" id="marker-count">0</span></h3>
+                    <h3 style="margin: 0;">マーク一覧 <span class="marker-count">{{ markerCount }}</span></h3>
                     <div style="display: flex; gap: 8px;">
-                        <button id="export-btn" class="small-btn">保存</button>
-                        <button id="import-btn" class="small-btn" style="background:#475569;">読込</button>
-                        <input type="file" id="import-file" accept=".json" style="display: none;">
+                        <button class="small-btn" @click="exportMarkers">保存</button>
+                        <button class="small-btn" style="background:#475569;" @click="triggerImportFile">読込</button>
+                        <input type="file" ref="importFileInput" accept=".json" style="display: none;" @change="importMarkers">
                     </div>
                 </div>
                 
-                <div id="marker-list" class="marker-list-scrollarea" style="font-size: 0.8rem;">
-                    まだマークはありません。
+                <div class="marker-list-scrollarea" style="font-size: 0.95rem;">
+                    <div v-if="markers.length === 0" style="color:#64748b;font-style:italic;">
+                        まだマークはありません。
+                    </div>
+                    <div 
+                        v-for="m in markers" 
+                        :key="getMarkerId(m)" 
+                        class="marker-item"
+                        :class="{ resolved: m.resolved }"
+                        @click="jumpToMarker(m)"
+                    >
+                        <div style="display:flex; justify-content:space-between; align-items:start;">
+                            <div class="marker-info">
+                                PAGE {{ m.page }}
+                                <span v-if="m.createdAt" style="margin-left: 8px; font-weight: normal; color: var(--text-secondary); font-size: 0.8rem;">
+                                    ({{ m.createdAt }})
+                                </span>
+                            </div>
+                            <button class="resolve-btn small-btn" style="padding: 2px 6px !important;" @click.stop="toggleMarkerResolved(m)">
+                                {{ m.resolved ? '↩️ 未解決に戻す' : '✅ 解決済みにする' }}
+                            </button>
+                        </div>
+                        <div class="marker-text" :style="m.resolved ? { textDecoration: 'line-through', color: 'var(--text-secondary)' } : {}">
+                            {{ m.reason }}
+                        </div>
+                    </div>
                 </div>
                 
-                <p style="font-size: 0.7rem; color: #64748b; line-height: 1.4; margin: 0;">
+                <p style="font-size: 0.8rem; color: #64748b; line-height: 1.4; margin: 0;">
                     ※ 誰かがマークを追加すると、このリストとボード上の位置にリアルタイムに反映されます。
                 </p>
                 
-                <div id="network-status-area" style="font-size: 0.7rem; color: #64748b; margin-top: 5px; display: flex; flex-direction: column; gap: 2px;">
-                    <div id="network-info-status">ネットワーク: 接続確認中...</div>
-                    <div id="last-ping-info">通信テスト: <a href="#" id="manual-ping-test" style="color: #3b82f6; text-decoration: underline;">今すぐ実行</a> <span id="last-ping-time">---</span></div>
+                <div id="network-status-area" style="font-size: 0.8rem; color: #64748b; margin-top: 5px; display: flex; flex-direction: column; gap: 2px;">
+                    <div>ネットワーク: {{ networkStatus }}</div>
+                    <div>通信テスト: <a href="#" @click.prevent="manualPingTest" style="color: #3b82f6; text-decoration: underline;">今すぐ実行</a> <span>{{ lastPingTime }}</span></div>
+                    
                     <!-- ブラウザ保存からの復元用ボタン -->
-                    <div id="storage-restore-area" style="display:none; margin-top:5px; padding:5px; background:rgba(59,130,246,0.1); border-radius:4px;">
-                        前回データあり: <a href="#" id="restore-btn" style="color:#60a5fa; font-weight:bold;">復元する</a>
+                    <div v-if="showRestoreArea" style="margin-top:5px; padding:5px; background:rgba(59,130,246,0.1); border-radius:4px;">
+                        前回データあり: <a href="#" @click.prevent="restoreFromBackup" style="color:#60a5fa; font-weight:bold;">復元する</a>
                     </div>
                 </div>
             </div>
