@@ -58,6 +58,10 @@ createApp({
         const lastPingTime = ref("---");
         const showRestoreArea = ref(false);
         const reason = ref("");
+        const panelWidth = ref(parseInt(localStorage.getItem('wakawaka_panel_width')) || 360);
+        const isAddFormOpen = ref(false);
+        const isUploadFormOpen = ref(false);
+        const connectionCount = ref(1);
         
         // --- 非リアクティブ状態 ---
         let currentPdfRender = null;
@@ -172,6 +176,7 @@ createApp({
             const y = ((e.clientY - rect.top) / rect.height) * 100;
 
             selectedData.value = { x, y };
+            isAddFormOpen.value = true; // ボードクリック時に自動でアコーディオンを展開
         };
 
         // マーカーのクリック時
@@ -206,6 +211,7 @@ createApp({
             // 入力欄をクリア
             reason.value = "";
             selectedData.value = { x: null, y: null };
+            isAddFormOpen.value = false; // マーカー確定後にアコーディオンを自動で閉じる
         };
 
         // マーカーの解決状態を切り替え
@@ -235,6 +241,8 @@ createApp({
                 const result = await response.json();
                 if (!result.success) {
                     alert(result.error || "アップロードに失敗しました");
+                } else {
+                    isUploadFormOpen.value = false; // アップロード成功時に自動でアコーディオンを閉じる
                 }
             } catch (err) {
                 console.error("Upload error:", err);
@@ -328,7 +336,7 @@ createApp({
         };
 
         // --- クライアント側でマーカーを追加/更新するヘルパー ---
-        const addMarkerToUI = (x, y, reasonText, page, resolved = false) => {
+        const addMarkerToUI = (x, y, reasonText, page, resolved = false, createdAt = null) => {
             const targetPage = page || currentPageNum.value;
             
             // 重複チェック
@@ -336,7 +344,7 @@ createApp({
                 m.page === targetPage && m.x === x && m.y === y && m.reason === reasonText
             );
             if (!exists) {
-                markers.value.push({ x, y, reason: reasonText, page: targetPage, resolved });
+                markers.value.push({ x, y, reason: reasonText, page: targetPage, resolved, createdAt });
                 // バックアップ保存
                 localStorage.setItem('wakawaka_markers_backup', JSON.stringify(markers.value));
             }
@@ -345,6 +353,47 @@ createApp({
         const clearAllMarkersUI = () => {
             markers.value = [];
             localStorage.removeItem('wakawaka_markers_backup');
+        };
+
+        // 操作パネルのリサイズ機能
+        let isResizing = false;
+
+        const startResize = (e) => {
+            isResizing = true;
+            document.addEventListener('mousemove', handleResizeDrag);
+            document.addEventListener('mouseup', stopResize);
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'col-resize';
+        };
+
+        const handleResizeDrag = (e) => {
+            if (!isResizing) return;
+            const newWidth = window.innerWidth - e.clientX;
+            // 最小幅 280px, 最大幅 800px に制限
+            if (newWidth > 280 && newWidth < 800) {
+                panelWidth.value = newWidth;
+                
+                // PDFの描画追従
+                if (lastPdfUrl) {
+                    clearTimeout(resizeTimer);
+                    resizeTimer = setTimeout(() => {
+                        renderPage(currentPageNum.value);
+                    }, 100);
+                }
+            }
+        };
+
+        const stopResize = () => {
+            if (!isResizing) return;
+            isResizing = false;
+            document.removeEventListener('mousemove', handleResizeDrag);
+            document.removeEventListener('mouseup', stopResize);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            localStorage.setItem('wakawaka_panel_width', panelWidth.value);
+            
+            // 最終サイズで再描画
+            renderPage(currentPageNum.value);
         };
 
         // --- ライフサイクル・リスナー登録 ---
@@ -392,7 +441,7 @@ createApp({
 
             socket.on('marker-added', (data) => {
                 if (data) {
-                    addMarkerToUI(data.x, data.y, data.reason, data.page, data.resolved);
+                    addMarkerToUI(data.x, data.y, data.reason, data.page, data.resolved, data.createdAt);
                 }
             });
 
@@ -408,7 +457,7 @@ createApp({
                 clearAllMarkersUI();
                 if (markersList) {
                     markersList.forEach(m => {
-                        addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved);
+                        addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved, m.createdAt);
                     });
                 }
 
@@ -430,6 +479,10 @@ createApp({
                 isLocked.value = locked;
             });
 
+            socket.on('connection-count-updated', (count) => {
+                connectionCount.value = count;
+            });
+
             socket.on('markers-cleared', () => {
                 clearAllMarkersUI();
             });
@@ -438,6 +491,8 @@ createApp({
             onUnmounted(() => {
                 window.removeEventListener('resize', handleResize);
                 clearInterval(keepAliveInterval);
+                document.removeEventListener('mousemove', handleResizeDrag);
+                document.removeEventListener('mouseup', stopResize);
                 socket.off('connect');
                 socket.off('disconnect');
                 socket.off('pdf-initialized');
@@ -447,6 +502,7 @@ createApp({
                 socket.off('markers-initialized');
                 socket.off('lock-status-updated');
                 socket.off('markers-cleared');
+                socket.off('connection-count-updated');
             });
         });
 
@@ -483,7 +539,12 @@ createApp({
             triggerImportFile,
             importMarkers,
             restoreFromBackup,
-            manualPingTest
+            manualPingTest,
+            panelWidth,
+            startResize,
+            isAddFormOpen,
+            isUploadFormOpen,
+            connectionCount
         };
     }
 }).mount('#main-app');

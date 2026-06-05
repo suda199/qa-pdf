@@ -76,8 +76,13 @@ app.post('/upload', upload.single('pdf'), (req, res) => {
 });
 
 // Socket.io 通信
+const updateConnectionCount = () => {
+    io.emit('connection-count-updated', io.engine.clientsCount);
+};
+
 io.on('connection', (socket) => {
     console.log(`ユーザーが接続しました: ${socket.id}`);
+    updateConnectionCount();
 
     // 新規接続ユーザーに現在の状態を同期
     if (currentPdf) {
@@ -95,7 +100,14 @@ io.on('connection', (socket) => {
         // 重複チェック
         const exists = markers.some(m => `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}` === id);
         if (!exists) {
-            const newMarker = { ...markerData, resolved: false };
+            const timestamp = markerData.createdAt || new Date().toLocaleString('ja-JP', {
+                timeZone: 'Asia/Tokyo',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            const newMarker = { ...markerData, resolved: false, createdAt: timestamp };
             markers.push(newMarker);
             // 送信者以外を含む全員にブロードキャスト
             io.emit('marker-added', newMarker);
@@ -134,6 +146,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`ユーザーが切断しました: ${socket.id}`);
+        updateConnectionCount();
     });
 });
 

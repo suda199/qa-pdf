@@ -115,7 +115,7 @@ canvas {
 }
 
 .form-area { 
-    width: 320px; 
+    width: 360px; 
     padding: 20px; 
     box-sizing: border-box; 
     background: var(--bg-side); 
@@ -149,7 +149,7 @@ h2, h3 {
 label { 
     display: block;
     font-weight: 600; 
-    font-size: 0.85rem; 
+    font-size: 0.95rem; 
     margin-bottom: 8px;
     color: var(--text-secondary);
 }
@@ -162,7 +162,7 @@ textarea {
     border: 1px solid var(--border); 
     border-radius: 8px; 
     resize: none; 
-    font-size: 0.9rem;
+    font-size: 1.0rem;
     background: var(--bg-main);
     color: var(--text-primary);
     transition: border-color 0.2s;
@@ -243,7 +243,7 @@ button:active {
 .status-badge {
     padding: 8px 12px;
     border-radius: 6px;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-align: center;
 }
@@ -252,7 +252,7 @@ button:active {
     background: var(--bg-card);
     padding: 2px 8px;
     border-radius: 10px;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
 }
 
 /* マーク一覧セクションのレイアウト固定 */
@@ -278,7 +278,7 @@ button:active {
 
 .small-btn {
     padding: 5px 10px !important;
-    font-size: 0.75rem !important;
+    font-size: 0.85rem !important;
     width: auto !important;
     height: auto !important;
 }
@@ -330,12 +330,12 @@ button:active {
     background: transparent;
     border: 1px solid var(--border);
     padding: 2px 8px;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     width: auto;
 }
 
 .marker-info {
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: var(--accent);
     margin-bottom: 6px;
@@ -344,8 +344,78 @@ button:active {
 }
 
 .marker-text {
-    font-size: 0.95rem; 
+    font-size: 1.05rem; 
     line-height: 1.6;
     color: var(--text-primary);
     word-break: break-all;
+}
+
+/* 分割線（つまみ） */
+.resizer {
+    width: 6px;
+    background-color: var(--border);
+    cursor: col-resize;
+    z-index: 50;
+    transition: background-color 0.2s, width 0.2s;
+    position: relative;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.resizer:hover,
+.resizer:active {
+    background-color: var(--accent);
+    width: 8px;
+}
+
+/* ドラッグ可能であることを示す縦方向の3点リーダー */
+.resizer::after {
+    content: "···";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    letter-spacing: 2px;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+/* アコーディオン形式のフォーム */
+.collapsible-section {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    transition: all 0.3s ease;
+}
+
+.collapsible-section.open {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.section-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.toggle-icon {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+}
+
+.section-body {
+    margin-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 12px;
 }
