@@ -53,7 +53,7 @@
             </div>
             
             <div id="shared-board" class="pdf-area" ref="sharedBoard">
-                <div id="pdf-container" class="pdf-page-container" @mousedown="handleMouseDown" @mousemove="handleMouseMove" ref="pdfContainer">
+                <div id="pdf-container" class="pdf-page-container" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @contextmenu.prevent ref="pdfContainer">
                     <canvas id="pdf-canvas" ref="pdfCanvas"></canvas>
                     
                     <!-- 登録済みのマークを描画 -->
@@ -69,8 +69,8 @@
                     <!-- 一時マーク（位置決定中）を描画 -->
                     <div 
                         v-if="selectedData.x !== null" 
-                        :class="['marker', 'temp-marker', currentTool]"
-                        :style="currentTool === 'rect' ? { left: selectedData.x + '%', top: selectedData.y + '%', width: selectedData.width + '%', height: selectedData.height + '%' } : { left: selectedData.x + '%', top: selectedData.y + '%' }"
+                        :class="['marker', 'temp-marker', (isDragging && selectedData.width > 0) ? 'rect' : currentTool]"
+                        :style="(currentTool === 'rect' || (isDragging && selectedData.width > 0)) ? { left: selectedData.x + '%', top: selectedData.y + '%', width: selectedData.width + '%', height: selectedData.height + '%' } : { left: selectedData.x + '%', top: selectedData.y + '%' }"
                     ></div>
                 </div>
             </div>
@@ -141,7 +141,7 @@
                         <textarea id="reason" v-model="reason" :placeholder="currentTool === 'rect' ? 'コメントを入力するか、そのまま確定ボタンを押してください' : '例: このあたりの説明をもう少し詳しく聞きたいです！'"></textarea>
                     </div>
 
-                    <button id="add-btn" @click="addMarker">📍 マークを確定</button>
+                    <button id="add-btn" @click="addMarker()">📍 マークを確定</button>
                 </div>
             </div>
 
@@ -161,7 +161,7 @@
                         まだマークはありません。
                     </div>
                     <div 
-                        v-for="m in markers" 
+                        v-for="m in visibleMarkers" 
                         :key="getMarkerId(m)" 
                         class="marker-item"
                         :class="{ resolved: m.resolved }"

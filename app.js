@@ -70,6 +70,7 @@ createApp({
         let lastPdfUrl = null;
         let resizeTimer = null;
         let dragStart = { x: 0, y: 0 };
+        let isRightClickDrag = false;
 
         // --- Template Refs ---
         const pdfCanvas = ref(null);
@@ -82,7 +83,11 @@ createApp({
             return markers.value.filter(m => m.page === currentPageNum.value);
         });
 
-        const markerCount = computed(() => markers.value.length);
+        const visibleMarkers = computed(() => {
+            return markers.value.filter(m => !m.hidden);
+        });
+
+        const markerCount = computed(() => visibleMarkers.value.length);
 
         // IDを生成するヘルパー関数
         const getMarkerId = (m) => {
@@ -174,7 +179,14 @@ createApp({
             const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
             const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-            if (currentTool.value === 'point') {
+            if (e.button === 2) {
+                // 右クリック時は強制的に「枠線(共有のみ)」モード
+                isRightClickDrag = true;
+                isDragging.value = true;
+                dragStart = { x, y };
+                selectedData.value = { x, y, width: 0, height: 0 };
+                document.addEventListener('mouseup', handleMouseUp, { once: true });
+            } else if (currentTool.value === 'point') {
                 selectedData.value = { x, y, width: 0, height: 0 };
                 isAddFormOpen.value = true;
             } else {
@@ -207,7 +219,12 @@ createApp({
             if (isDragging.value) {
                 isDragging.value = false;
                 if (selectedData.value.width > 0.5 || selectedData.value.height > 0.5) {
-                    isAddFormOpen.value = true;
+                    if (isRightClickDrag) {
+                        addMarker(true);
+                        isRightClickDrag = false;
+                    } else {
+                        isAddFormOpen.value = true;
+                    }
                 }
             }
         };
@@ -225,11 +242,14 @@ createApp({
         };
 
         // マークの追加確定
-        const addMarker = () => {
+        const addMarker = (arg = false) => {
+            // 引数が厳密に true の場合のみ自動非表示（右クリックドラッグ等）として扱う
+            const isAutoHidden = arg === true;
             const trimmedReason = reason.value.trim();
             
             // 枠線(rect)の場合はコメントなしでも確定可能にする
-            const isNoCommentAllowed = currentTool.value === 'rect';
+            const type = isAutoHidden ? 'rect' : currentTool.value;
+            const isNoCommentAllowed = type === 'rect';
 
             if (selectedData.value.x === null) {
                 return alert("ボード上で場所を指定してください。");
@@ -244,9 +264,10 @@ createApp({
                 y: selectedData.value.y,
                 width: selectedData.value.width,
                 height: selectedData.value.height,
-                type: currentTool.value,
-                reason: trimmedReason || (isNoCommentAllowed ? "（枠線のみ）" : ""),
-                page: currentPageNum.value
+                type: type,
+                reason: trimmedReason || (isNoCommentAllowed ? (isAutoHidden ? "（共有のみ）" : "（枠線のみ）") : ""),
+                page: currentPageNum.value,
+                hidden: isAutoHidden
             };
 
             // サーバーへ送信（リアルタイム共有）
@@ -559,6 +580,7 @@ createApp({
             showRestoreArea,
             reason,
             currentPageMarkers,
+            visibleMarkers,
             markerCount,
             pdfCanvas,
             pdfContainer,
@@ -588,7 +610,8 @@ createApp({
             isAddFormOpen,
             isUploadFormOpen,
             connectionCount,
-            currentTool
+            currentTool,
+            isDragging
         };
     }
 }).mount('#main-app');
