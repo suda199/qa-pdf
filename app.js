@@ -49,7 +49,7 @@ const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
 createApp({
     setup() {
         // --- 状態 (State) ---
-        const selectedData = ref({ x: null, y: null });
+        const selectedData = ref({ x: null, y: null, width: 0, height: 0 });
         const markers = ref([]);
         const currentPageNum = ref(1);
         const totalPages = ref(0);
@@ -62,11 +62,14 @@ createApp({
         const isAddFormOpen = ref(false);
         const isUploadFormOpen = ref(false);
         const connectionCount = ref(1);
+        const currentTool = ref('point');
+        const isDragging = ref(false);
         
         // --- 非リアクティブ状態 ---
         let currentPdfRender = null;
         let lastPdfUrl = null;
         let resizeTimer = null;
+        let dragStart = { x: 0, y: 0 };
 
         // --- Template Refs ---
         const pdfCanvas = ref(null);
@@ -83,7 +86,7 @@ createApp({
 
         // IDを生成するヘルパー関数
         const getMarkerId = (m) => {
-            return `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
+            return `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
         };
 
         // --- メソッド (Methods) ---
@@ -159,24 +162,54 @@ createApp({
             }
         };
 
-        // ボードクリックによる位置選択
-        const handleBoardClick = (e) => {
+        // マウスダウン（ドラッグ開始または点選択）
+        const handleMouseDown = (e) => {
             if (!currentPdfRender) return;
-
-            // マーカー要素自体がクリックされた場合は新規マーカー作成処理を行わない
-            if (e.target.classList.contains('marker')) {
-                return;
-            }
+            if (e.target.classList.contains('marker')) return;
 
             const container = pdfContainer.value;
             if (!container) return;
 
             const rect = container.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+            const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-            selectedData.value = { x, y };
-            isAddFormOpen.value = true; // ボードクリック時に自動でアコーディオンを展開
+            if (currentTool.value === 'point') {
+                selectedData.value = { x, y, width: 0, height: 0 };
+                isAddFormOpen.value = true;
+            } else {
+                isDragging.value = true;
+                dragStart = { x, y };
+                selectedData.value = { x, y, width: 0, height: 0 };
+                document.addEventListener('mouseup', handleMouseUp, { once: true });
+            }
+        };
+
+        // マウス移動（枠線のプレビュー）
+        const handleMouseMove = (e) => {
+            if (!isDragging.value) return;
+
+            const container = pdfContainer.value;
+            const rect = container.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+            const currentY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+            selectedData.value = {
+                x: Math.min(dragStart.x, currentX),
+                y: Math.min(dragStart.y, currentY),
+                width: Math.abs(currentX - dragStart.x),
+                height: Math.abs(currentY - dragStart.y)
+            };
+        };
+
+        // マウスアップ（枠線の確定）
+        const handleMouseUp = () => {
+            if (isDragging.value) {
+                isDragging.value = false;
+                if (selectedData.value.width > 0.5 || selectedData.value.height > 0.5) {
+                    isAddFormOpen.value = true;
+                }
+            }
         };
 
         // マーカーのクリック時
@@ -194,14 +227,25 @@ createApp({
         // マークの追加確定
         const addMarker = () => {
             const trimmedReason = reason.value.trim();
-            if (selectedData.value.x === null || !trimmedReason) {
-                return alert("ボード上をクリックして場所を選択し、質問内容を入力してください。");
+            
+            // 枠線(rect)の場合はコメントなしでも確定可能にする
+            const isNoCommentAllowed = currentTool.value === 'rect';
+
+            if (selectedData.value.x === null) {
+                return alert("ボード上で場所を指定してください。");
+            }
+            
+            if (!trimmedReason && !isNoCommentAllowed) {
+                return alert("質問内容を入力してください。");
             }
 
             const markerData = {
                 x: selectedData.value.x,
                 y: selectedData.value.y,
-                reason: trimmedReason,
+                width: selectedData.value.width,
+                height: selectedData.value.height,
+                type: currentTool.value,
+                reason: trimmedReason || (isNoCommentAllowed ? "（枠線のみ）" : ""),
                 page: currentPageNum.value
             };
 
@@ -210,7 +254,7 @@ createApp({
 
             // 入力欄をクリア
             reason.value = "";
-            selectedData.value = { x: null, y: null };
+            selectedData.value = { x: null, y: null, width: 0, height: 0 };
             isAddFormOpen.value = false; // マーカー確定後にアコーディオンを自動で閉じる
         };
 
@@ -336,15 +380,13 @@ createApp({
         };
 
         // --- クライアント側でマーカーを追加/更新するヘルパー ---
-        const addMarkerToUI = (x, y, reasonText, page, resolved = false, createdAt = null) => {
-            const targetPage = page || currentPageNum.value;
+        const addMarkerToUI = (marker) => {
+            const targetPage = marker.page || currentPageNum.value;
             
             // 重複チェック
-            const exists = markers.value.some(m => 
-                m.page === targetPage && m.x === x && m.y === y && m.reason === reasonText
-            );
+            const exists = markers.value.some(m => getMarkerId(m) === getMarkerId(marker));
             if (!exists) {
-                markers.value.push({ x, y, reason: reasonText, page: targetPage, resolved, createdAt });
+                markers.value.push({ ...marker, page: targetPage });
                 // バックアップ保存
                 localStorage.setItem('wakawaka_markers_backup', JSON.stringify(markers.value));
             }
@@ -441,7 +483,7 @@ createApp({
 
             socket.on('marker-added', (data) => {
                 if (data) {
-                    addMarkerToUI(data.x, data.y, data.reason, data.page, data.resolved, data.createdAt);
+                    addMarkerToUI(data);
                 }
             });
 
@@ -457,7 +499,7 @@ createApp({
                 clearAllMarkersUI();
                 if (markersList) {
                     markersList.forEach(m => {
-                        addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved, m.createdAt);
+                        addMarkerToUI(m);
                     });
                 }
 
@@ -528,7 +570,8 @@ createApp({
             nextPage,
             handlePageInput,
             handlePageBlur,
-            handleBoardClick,
+            handleMouseDown,
+            handleMouseMove,
             showMarkerReason,
             jumpToMarker,
             addMarker,
@@ -544,7 +587,8 @@ createApp({
             startResize,
             isAddFormOpen,
             isUploadFormOpen,
-            connectionCount
+            connectionCount,
+            currentTool
         };
     }
 }).mount('#main-app');
