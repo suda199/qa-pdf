@@ -19,6 +19,7 @@ window.addEventListener('unhandledrejection', function(e) {
     const reasonStr = e.reason ? (e.reason.message || String(e.reason)) : '';
     if (reasonStr.includes('message channel closed') || 
         reasonStr.includes('A listener indicated an asynchronous response') ||
+        reasonStr.toLowerCase().includes('cancelled') ||
         (e.reason && e.reason.stack && e.reason.stack.includes('chrome-extension://'))) {
         return;
     }
@@ -64,6 +65,9 @@ createApp({
         const connectionCount = ref(1);
         const currentTool = ref('point');
         const isDragging = ref(false);
+        const searchText = ref("");
+        const searchHits = ref([]);
+        const isIndexing = ref(false);
         
         // --- 非リアクティブ状態 ---
         let currentPdfRender = null;
@@ -71,6 +75,8 @@ createApp({
         let resizeTimer = null;
         let dragStart = { x: 0, y: 0 };
         let isRightClickDrag = false;
+        let currentRenderTask = null; // 現在実行中の描画タスク
+        let textCache = {}; // { pageNum: [ {str, x, y, w, h}, ... ] }
 
         // --- Template Refs ---
         const pdfCanvas = ref(null);
@@ -81,6 +87,10 @@ createApp({
         // --- 計算プロパティ (Computed) ---
         const currentPageMarkers = computed(() => {
             return markers.value.filter(m => m.page === currentPageNum.value);
+        });
+
+        const currentPageSearchHits = computed(() => {
+            return searchHits.value.filter(h => h.page === currentPageNum.value);
         });
 
         const visibleMarkers = computed(() => {
@@ -103,10 +113,52 @@ createApp({
                 const loadingTask = pdfjsLib.getDocument(pdfUrl);
                 currentPdfRender = await loadingTask.promise;
                 totalPages.value = currentPdfRender.numPages;
+                textCache = {};
+                searchHits.value = [];
                 await renderPage(startPage);
+                
+                // バックグラウンドでテキスト抽出開始
+                startIndexing();
             } catch (err) {
                 console.error("PDFの読み込みに失敗しました:", err);
             }
+        };
+
+        // 非同期テキスト抽出
+        const startIndexing = async () => {
+            isIndexing.value = true;
+            for (let i = 1; i <= totalPages.value; i++) {
+                if (!currentPdfRender) break;
+                const page = await currentPdfRender.getPage(i);
+                const content = await page.getTextContent();
+                const viewport = page.getViewport({ scale: 1 });
+                
+                // 有効なテキストアイテムのみを抽出
+                textCache[i] = content.items
+                    .filter(item => item.transform && typeof item.str === 'string')
+                    .map(item => {
+                        const [sx, sy, tx, ty, x, y] = item.transform;
+                        // PDF座標をビューポート座標(scale:1)に変換
+                        const [vx, vy] = viewport.convertToViewportPoint(x, y);
+                        
+                        // 基準となるフォントサイズ(ty)を使用して高さを補正
+                        const fontHeight = Math.abs(ty) || 10;
+                        const itemWidth = item.width || 0;
+
+                        return {
+                            str: item.str,
+                            x: (vx / viewport.width) * 100,
+                            y: ((vy - fontHeight) / viewport.height) * 100,
+                            w: (itemWidth / viewport.width) * 100,
+                            h: (fontHeight / viewport.height) * 100
+                        };
+                    });
+                
+                // UIをブロックしないように少し待機
+                if (i % 3 === 0) await new Promise(r => setTimeout(r, 10));
+            }
+            isIndexing.value = false;
+            if (searchText.value) executeSearch(); // すでに文字が入っていれば再検索
         };
 
         // ページの描画
@@ -115,6 +167,11 @@ createApp({
             currentPageNum.value = pageNum;
 
             try {
+                // 実行中の描画タスクがあればキャンセル
+                if (currentRenderTask) {
+                    currentRenderTask.cancel();
+                }
+
                 const page = await currentPdfRender.getPage(pageNum);
                 const canvas = pdfCanvas.value;
                 if (!canvas) return;
@@ -134,10 +191,43 @@ createApp({
                     canvasContext: context,
                     viewport: scaledViewport
                 };
-                await page.render(renderContext).promise;
+                
+                currentRenderTask = page.render(renderContext);
+                await currentRenderTask.promise;
+                currentRenderTask = null;
             } catch (err) {
+                // キャンセルによるエラーは無視する
+                if (err.name === 'RenderingCancelledException' || err.message.includes('cancelled')) return;
                 console.error("ページの描画に失敗しました:", err);
             }
+        };
+
+        // 検索実行
+        const executeSearch = () => {
+            const query = searchText.value.trim().toLowerCase();
+            if (!query) {
+                searchHits.value = [];
+                return;
+            }
+
+            const hits = [];
+            Object.keys(textCache).forEach(pageNum => {
+                const pageItems = textCache[pageNum];
+                pageItems.forEach(item => {
+                    if (item.str.toLowerCase().includes(query)) {
+                        hits.push({
+                            ...item,
+                            page: parseInt(pageNum)
+                        });
+                    }
+                });
+            });
+            searchHits.value = hits;
+        };
+
+        const clearSearch = () => {
+            searchText.value = "";
+            searchHits.value = [];
         };
 
         // ページ入力の決定
@@ -580,14 +670,19 @@ createApp({
             showRestoreArea,
             reason,
             currentPageMarkers,
+            currentPageSearchHits,
             visibleMarkers,
             markerCount,
             pdfCanvas,
             pdfContainer,
             sharedBoard,
             importFileInput,
+            searchText,
+            searchHits,
+            isIndexing,
             
             getMarkerId,
+            renderPage, // ここを追加
             prevPage,
             nextPage,
             handlePageInput,
@@ -611,7 +706,9 @@ createApp({
             isUploadFormOpen,
             connectionCount,
             currentTool,
-            isDragging
+            isDragging,
+            executeSearch,
+            clearSearch
         };
     }
 }).mount('#main-app');

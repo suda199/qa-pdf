@@ -66,6 +66,14 @@
                         @click.stop="showMarkerReason(marker)"
                     ></div>
 
+                    <!-- 検索ハイライトを表示 -->
+                    <div 
+                        v-for="(hit, idx) in currentPageSearchHits" 
+                        :key="'hit-'+idx" 
+                        class="search-highlight"
+                        :style="{ left: hit.x + '%', top: hit.y + '%', width: hit.w + '%', height: hit.h + '%' }"
+                    ></div>
+
                     <!-- 一時マーク（位置決定中）を描画 -->
                     <div 
                         v-if="selectedData.x !== null" 
@@ -88,6 +96,30 @@
                 <span class="connection-count" style="background: rgba(96, 165, 250, 0.2); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">
                     👤 {{ connectionCount }}
                 </span>
+            </div>
+
+            <!-- 検索セクション -->
+            <div class="search-section collapsible-section">
+                <div class="section-header">
+                    <h3 style="font-size: 1rem;">🔍 文言を検索</h3>
+                    <span v-if="isIndexing" class="loader-dots" title="テキストを解析中...">...</span>
+                </div>
+                <div class="section-body" style="display: block; margin-top: 8px;">
+                    <div style="display: flex; gap: 5px;">
+                        <input type="text" v-model="searchText" @input="executeSearch" placeholder="キーワードを入力..." style="flex: 1; background: var(--bg-main); border: 1px solid var(--border); color: white; padding: 8px; border-radius: 6px;">
+                        <button class="small-btn" @click="clearSearch" style="background: var(--bg-card); width: auto !important;">❌</button>
+                    </div>
+                    <div v-if="searchText" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
+                        {{ searchHits.length }} 件ヒットしました
+                    </div>
+                    <!-- 検索結果リスト -->
+                    <div v-if="searchText && searchHits.length > 0" class="search-results-container">
+                        <div v-for="(hit, idx) in searchHits" :key="idx" @click="renderPage(hit.page)" class="search-hit-item">
+                            <span class="hit-page-label">P.{{ hit.page }}</span>
+                            <span class="hit-text-snippet">{{ hit.str }}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- PDFアップロードセクション -->

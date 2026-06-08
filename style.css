@@ -234,6 +234,52 @@ button:active {
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
 }
 
+/* 検索ハイライト */
+.search-highlight {
+    position: absolute;
+    background-color: rgba(255, 255, 0, 0.4);
+    pointer-events: none;
+    z-index: 4;
+    mix-blend-mode: multiply;
+}
+
+/* 検索結果リストのコンテナ */
+.search-results-container {
+    margin-top: 10px;
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.search-hit-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    gap: 10px;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+
+.search-hit-item:hover {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.hit-page-label {
+    color: var(--accent);
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.hit-text-snippet {
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .temp-marker { 
     background-color: var(--accent) !important; 
     border-style: dashed;
@@ -418,4 +464,15 @@ button:active {
     margin-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     padding-top: 12px;
+}
+
+.loader-dots {
+    font-weight: bold;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0% { opacity: 0.2; }
+    50% { opacity: 1; }
+    100% { opacity: 0.2; }
 }
