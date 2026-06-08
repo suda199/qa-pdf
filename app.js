@@ -19,6 +19,7 @@ window.addEventListener('unhandledrejection', function(e) {
     const reasonStr = e.reason ? (e.reason.message || String(e.reason)) : '';
     if (reasonStr.includes('message channel closed') || 
         reasonStr.includes('A listener indicated an asynchronous response') ||
+        reasonStr.toLowerCase().includes('cancelled') ||
         (e.reason && e.reason.stack && e.reason.stack.includes('chrome-extension://'))) {
         return;
     }
@@ -49,7 +50,7 @@ const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
 createApp({
     setup() {
         // --- 状態 (State) ---
-        const selectedData = ref({ x: null, y: null });
+        const selectedData = ref({ x: null, y: null, width: 0, height: 0 });
         const markers = ref([]);
         const currentPageNum = ref(1);
         const totalPages = ref(0);
@@ -62,11 +63,20 @@ createApp({
         const isAddFormOpen = ref(false);
         const isUploadFormOpen = ref(false);
         const connectionCount = ref(1);
+        const currentTool = ref('point');
+        const isDragging = ref(false);
+        const searchText = ref("");
+        const searchHits = ref([]);
+        const isIndexing = ref(false);
         
         // --- 非リアクティブ状態 ---
         let currentPdfRender = null;
         let lastPdfUrl = null;
         let resizeTimer = null;
+        let dragStart = { x: 0, y: 0 };
+        let isRightClickDrag = false;
+        let currentRenderTask = null; // 現在実行中の描画タスク
+        let textCache = {}; // { pageNum: [ {str, x, y, w, h}, ... ] }
 
         // --- Template Refs ---
         const pdfCanvas = ref(null);
@@ -79,11 +89,19 @@ createApp({
             return markers.value.filter(m => m.page === currentPageNum.value);
         });
 
-        const markerCount = computed(() => markers.value.length);
+        const currentPageSearchHits = computed(() => {
+            return searchHits.value.filter(h => h.page === currentPageNum.value);
+        });
+
+        const visibleMarkers = computed(() => {
+            return markers.value.filter(m => !m.hidden);
+        });
+
+        const markerCount = computed(() => visibleMarkers.value.length);
 
         // IDを生成するヘルパー関数
         const getMarkerId = (m) => {
-            return `${m.page}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
+            return `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
         };
 
         // --- メソッド (Methods) ---
@@ -95,10 +113,52 @@ createApp({
                 const loadingTask = pdfjsLib.getDocument(pdfUrl);
                 currentPdfRender = await loadingTask.promise;
                 totalPages.value = currentPdfRender.numPages;
+                textCache = {};
+                searchHits.value = [];
                 await renderPage(startPage);
+                
+                // バックグラウンドでテキスト抽出開始
+                startIndexing();
             } catch (err) {
                 console.error("PDFの読み込みに失敗しました:", err);
             }
+        };
+
+        // 非同期テキスト抽出
+        const startIndexing = async () => {
+            isIndexing.value = true;
+            for (let i = 1; i <= totalPages.value; i++) {
+                if (!currentPdfRender) break;
+                const page = await currentPdfRender.getPage(i);
+                const content = await page.getTextContent();
+                const viewport = page.getViewport({ scale: 1 });
+                
+                // 有効なテキストアイテムのみを抽出
+                textCache[i] = content.items
+                    .filter(item => item.transform && typeof item.str === 'string')
+                    .map(item => {
+                        const [sx, sy, tx, ty, x, y] = item.transform;
+                        // PDF座標をビューポート座標(scale:1)に変換
+                        const [vx, vy] = viewport.convertToViewportPoint(x, y);
+                        
+                        // 基準となるフォントサイズ(ty)を使用して高さを補正
+                        const fontHeight = Math.abs(ty) || 10;
+                        const itemWidth = item.width || 0;
+
+                        return {
+                            str: item.str,
+                            x: (vx / viewport.width) * 100,
+                            y: ((vy - fontHeight) / viewport.height) * 100,
+                            w: (itemWidth / viewport.width) * 100,
+                            h: (fontHeight / viewport.height) * 100
+                        };
+                    });
+                
+                // UIをブロックしないように少し待機
+                if (i % 3 === 0) await new Promise(r => setTimeout(r, 10));
+            }
+            isIndexing.value = false;
+            if (searchText.value) executeSearch(); // すでに文字が入っていれば再検索
         };
 
         // ページの描画
@@ -107,6 +167,11 @@ createApp({
             currentPageNum.value = pageNum;
 
             try {
+                // 実行中の描画タスクがあればキャンセル
+                if (currentRenderTask) {
+                    currentRenderTask.cancel();
+                }
+
                 const page = await currentPdfRender.getPage(pageNum);
                 const canvas = pdfCanvas.value;
                 if (!canvas) return;
@@ -126,10 +191,43 @@ createApp({
                     canvasContext: context,
                     viewport: scaledViewport
                 };
-                await page.render(renderContext).promise;
+                
+                currentRenderTask = page.render(renderContext);
+                await currentRenderTask.promise;
+                currentRenderTask = null;
             } catch (err) {
+                // キャンセルによるエラーは無視する
+                if (err.name === 'RenderingCancelledException' || err.message.includes('cancelled')) return;
                 console.error("ページの描画に失敗しました:", err);
             }
+        };
+
+        // 検索実行
+        const executeSearch = () => {
+            const query = searchText.value.trim().toLowerCase();
+            if (!query) {
+                searchHits.value = [];
+                return;
+            }
+
+            const hits = [];
+            Object.keys(textCache).forEach(pageNum => {
+                const pageItems = textCache[pageNum];
+                pageItems.forEach(item => {
+                    if (item.str.toLowerCase().includes(query)) {
+                        hits.push({
+                            ...item,
+                            page: parseInt(pageNum)
+                        });
+                    }
+                });
+            });
+            searchHits.value = hits;
+        };
+
+        const clearSearch = () => {
+            searchText.value = "";
+            searchHits.value = [];
         };
 
         // ページ入力の決定
@@ -159,24 +257,66 @@ createApp({
             }
         };
 
-        // ボードクリックによる位置選択
-        const handleBoardClick = (e) => {
+        // マウスダウン（ドラッグ開始または点選択）
+        const handleMouseDown = (e) => {
             if (!currentPdfRender) return;
-
-            // マーカー要素自体がクリックされた場合は新規マーカー作成処理を行わない
-            if (e.target.classList.contains('marker')) {
-                return;
-            }
+            if (e.target.classList.contains('marker')) return;
 
             const container = pdfContainer.value;
             if (!container) return;
 
             const rect = container.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+            const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-            selectedData.value = { x, y };
-            isAddFormOpen.value = true; // ボードクリック時に自動でアコーディオンを展開
+            if (e.button === 2) {
+                // 右クリック時は強制的に「枠線(共有のみ)」モード
+                isRightClickDrag = true;
+                isDragging.value = true;
+                dragStart = { x, y };
+                selectedData.value = { x, y, width: 0, height: 0 };
+                document.addEventListener('mouseup', handleMouseUp, { once: true });
+            } else if (currentTool.value === 'point') {
+                selectedData.value = { x, y, width: 0, height: 0 };
+                isAddFormOpen.value = true;
+            } else {
+                isDragging.value = true;
+                dragStart = { x, y };
+                selectedData.value = { x, y, width: 0, height: 0 };
+                document.addEventListener('mouseup', handleMouseUp, { once: true });
+            }
+        };
+
+        // マウス移動（枠線のプレビュー）
+        const handleMouseMove = (e) => {
+            if (!isDragging.value) return;
+
+            const container = pdfContainer.value;
+            const rect = container.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+            const currentY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+            selectedData.value = {
+                x: Math.min(dragStart.x, currentX),
+                y: Math.min(dragStart.y, currentY),
+                width: Math.abs(currentX - dragStart.x),
+                height: Math.abs(currentY - dragStart.y)
+            };
+        };
+
+        // マウスアップ（枠線の確定）
+        const handleMouseUp = () => {
+            if (isDragging.value) {
+                isDragging.value = false;
+                if (selectedData.value.width > 0.5 || selectedData.value.height > 0.5) {
+                    if (isRightClickDrag) {
+                        addMarker(true);
+                        isRightClickDrag = false;
+                    } else {
+                        isAddFormOpen.value = true;
+                    }
+                }
+            }
         };
 
         // マーカーのクリック時
@@ -192,17 +332,32 @@ createApp({
         };
 
         // マークの追加確定
-        const addMarker = () => {
+        const addMarker = (arg = false) => {
+            // 引数が厳密に true の場合のみ自動非表示（右クリックドラッグ等）として扱う
+            const isAutoHidden = arg === true;
             const trimmedReason = reason.value.trim();
-            if (selectedData.value.x === null || !trimmedReason) {
-                return alert("ボード上をクリックして場所を選択し、質問内容を入力してください。");
+            
+            // 枠線(rect)の場合はコメントなしでも確定可能にする
+            const type = isAutoHidden ? 'rect' : currentTool.value;
+            const isNoCommentAllowed = type === 'rect';
+
+            if (selectedData.value.x === null) {
+                return alert("ボード上で場所を指定してください。");
+            }
+            
+            if (!trimmedReason && !isNoCommentAllowed) {
+                return alert("質問内容を入力してください。");
             }
 
             const markerData = {
                 x: selectedData.value.x,
                 y: selectedData.value.y,
-                reason: trimmedReason,
-                page: currentPageNum.value
+                width: selectedData.value.width,
+                height: selectedData.value.height,
+                type: type,
+                reason: trimmedReason || (isNoCommentAllowed ? (isAutoHidden ? "（共有のみ）" : "（枠線のみ）") : ""),
+                page: currentPageNum.value,
+                hidden: isAutoHidden
             };
 
             // サーバーへ送信（リアルタイム共有）
@@ -210,7 +365,7 @@ createApp({
 
             // 入力欄をクリア
             reason.value = "";
-            selectedData.value = { x: null, y: null };
+            selectedData.value = { x: null, y: null, width: 0, height: 0 };
             isAddFormOpen.value = false; // マーカー確定後にアコーディオンを自動で閉じる
         };
 
@@ -336,15 +491,13 @@ createApp({
         };
 
         // --- クライアント側でマーカーを追加/更新するヘルパー ---
-        const addMarkerToUI = (x, y, reasonText, page, resolved = false, createdAt = null) => {
-            const targetPage = page || currentPageNum.value;
+        const addMarkerToUI = (marker) => {
+            const targetPage = marker.page || currentPageNum.value;
             
             // 重複チェック
-            const exists = markers.value.some(m => 
-                m.page === targetPage && m.x === x && m.y === y && m.reason === reasonText
-            );
+            const exists = markers.value.some(m => getMarkerId(m) === getMarkerId(marker));
             if (!exists) {
-                markers.value.push({ x, y, reason: reasonText, page: targetPage, resolved, createdAt });
+                markers.value.push({ ...marker, page: targetPage });
                 // バックアップ保存
                 localStorage.setItem('wakawaka_markers_backup', JSON.stringify(markers.value));
             }
@@ -441,7 +594,7 @@ createApp({
 
             socket.on('marker-added', (data) => {
                 if (data) {
-                    addMarkerToUI(data.x, data.y, data.reason, data.page, data.resolved, data.createdAt);
+                    addMarkerToUI(data);
                 }
             });
 
@@ -457,7 +610,7 @@ createApp({
                 clearAllMarkersUI();
                 if (markersList) {
                     markersList.forEach(m => {
-                        addMarkerToUI(m.x, m.y, m.reason, m.page, m.resolved, m.createdAt);
+                        addMarkerToUI(m);
                     });
                 }
 
@@ -517,18 +670,25 @@ createApp({
             showRestoreArea,
             reason,
             currentPageMarkers,
+            currentPageSearchHits,
+            visibleMarkers,
             markerCount,
             pdfCanvas,
             pdfContainer,
             sharedBoard,
             importFileInput,
+            searchText,
+            searchHits,
+            isIndexing,
             
             getMarkerId,
+            renderPage, // ここを追加
             prevPage,
             nextPage,
             handlePageInput,
             handlePageBlur,
-            handleBoardClick,
+            handleMouseDown,
+            handleMouseMove,
             showMarkerReason,
             jumpToMarker,
             addMarker,
@@ -544,7 +704,11 @@ createApp({
             startResize,
             isAddFormOpen,
             isUploadFormOpen,
-            connectionCount
+            connectionCount,
+            currentTool,
+            isDragging,
+            executeSearch,
+            clearSearch
         };
     }
 }).mount('#main-app');

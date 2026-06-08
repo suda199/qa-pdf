@@ -1,16 +1,17 @@
 {
-  "name": "qa-pdf",
+  "name": "qa-pdf-board",
   "version": "1.0.0",
-  "description": "Lecture PDF viewer and real-time Q&A system for local environment",
+  "description": "リアルタイム PDF 不明点共有ボード",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.22.2",
-    "multer": "^1.4.5-lts.1",
-    "pdfjs-dist": "3.11.174",
-    "socket.io": "^4.8.3"
-  }
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "author": "",
+  "license": "ISC"
 }
