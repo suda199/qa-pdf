@@ -377,7 +377,10 @@ createApp({
 
         // ロック解除
         const unlockPdf = () => {
-            socket.emit('unlock-pdf');
+            const pin = prompt("ボードのロックを解除するには暗証番号を入力してください:");
+            if (pin !== null) {
+                socket.emit('unlock-pdf', pin);
+            }
         };
 
         // PDFアップロード
@@ -630,6 +633,11 @@ createApp({
 
             socket.on('lock-status-updated', (locked) => {
                 isLocked.value = locked;
+            });
+
+            // ロック解除失敗時の通知
+            socket.on('unlock-failed', (message) => {
+                alert(message);
             });
 
             socket.on('connection-count-updated', (count) => {

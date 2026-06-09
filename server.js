@@ -10,6 +10,7 @@ const server = http.createServer(app);
 const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
+const UNLOCK_PIN = '8989'; // 解除用の暗証番号を設定
 
 // uploads ディレクトリの作成
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -140,9 +141,13 @@ io.on('connection', (socket) => {
     });
 
     // ロック解除を受信
-    socket.on('unlock-pdf', () => {
-        isLocked = false;
-        io.emit('lock-status-updated', isLocked);
+    socket.on('unlock-pdf', (pin) => {
+        if (pin === UNLOCK_PIN) {
+            isLocked = false;
+            io.emit('lock-status-updated', isLocked);
+        } else {
+            socket.emit('unlock-failed', '暗証番号が正しくありません。');
+        }
     });
 
     socket.on('disconnect', () => {
