@@ -96,10 +96,14 @@ io.on('connection', (socket) => {
 
     // マーカーの追加を受信
     socket.on('add-marker', (markerData) => {
-        const id = `${markerData.page}-${markerData.type || 'point'}-${Number(markerData.x).toFixed(2)}-${Number(markerData.y).toFixed(2)}-${markerData.reason}`;
+        const getMid = (m) => 
+            `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-` +
+            `${Number(m.x2 || 0).toFixed(2)}-${Number(m.y2 || 0).toFixed(2)}-${m.reason}`;
+        
+        const id = getMid(markerData);
         
         // 重複チェック
-        const exists = markers.some(m => `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}` === id);
+        const exists = markers.some(m => getMid(m) === id);
         if (!exists) {
             const timestamp = markerData.createdAt || new Date().toLocaleString('ja-JP', {
                 timeZone: 'Asia/Tokyo',
@@ -118,7 +122,8 @@ io.on('connection', (socket) => {
     // マーカーの解決状態を切り替え
     socket.on('toggle-marker-resolved', (markerId) => {
         const marker = markers.find(m => {
-            const mId = `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
+            const mId = `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-` +
+                        `${Number(m.x2 || 0).toFixed(2)}-${Number(m.y2 || 0).toFixed(2)}-${m.reason}`;
             return mId === markerId;
         });
         if (marker) {

@@ -50,7 +50,7 @@ const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
 createApp({
     setup() {
         // --- 状態 (State) ---
-        const selectedData = ref({ x: null, y: null, width: 0, height: 0 });
+        const selectedData = ref({ x: null, y: null, x2: null, y2: null, width: 0, height: 0 });
         const markers = ref([]);
         const currentPageNum = ref(1);
         const totalPages = ref(0);
@@ -65,6 +65,7 @@ createApp({
         const connectionCount = ref(1);
         const currentTool = ref('point');
         const isDragging = ref(false);
+        const isRightClickDrag = ref(false);
         const searchText = ref("");
         const searchHits = ref([]);
         const isIndexing = ref(false);
@@ -74,7 +75,6 @@ createApp({
         let lastPdfUrl = null;
         let resizeTimer = null;
         let dragStart = { x: 0, y: 0 };
-        let isRightClickDrag = false;
         let currentRenderTask = null; // 現在実行中の描画タスク
         let textCache = {}; // { pageNum: [ {str, x, y, w, h}, ... ] }
 
@@ -94,14 +94,15 @@ createApp({
         });
 
         const visibleMarkers = computed(() => {
-            return markers.value.filter(m => !m.hidden);
+            return markers.value.filter(m => !m.hidden && m.type !== 'comment');
         });
 
         const markerCount = computed(() => visibleMarkers.value.length);
 
         // IDを生成するヘルパー関数
         const getMarkerId = (m) => {
-            return `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-${m.reason}`;
+            return `${m.page}-${m.type || 'point'}-${Number(m.x).toFixed(2)}-${Number(m.y).toFixed(2)}-` +
+                   `${Number(m.x2 || 0).toFixed(2)}-${Number(m.y2 || 0).toFixed(2)}-${m.reason}`;
         };
 
         // --- メソッド (Methods) ---
@@ -270,11 +271,14 @@ createApp({
             const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
             if (e.button === 2) {
-                // 右クリック時は強制的に「枠線(共有のみ)」モード
-                isRightClickDrag = true;
+                // 右クリックドラッグ開始
+                e.preventDefault();
                 isDragging.value = true;
                 dragStart = { x, y };
-                selectedData.value = { x, y, width: 0, height: 0 };
+                selectedData.value = { x, y, x2: x, y2: y, width: 0, height: 0 };
+                if (currentTool.value !== 'comment') {
+                    isRightClickDrag.value = true;
+                }
                 document.addEventListener('mouseup', handleMouseUp, { once: true });
             } else if (currentTool.value === 'point') {
                 selectedData.value = { x, y, width: 0, height: 0 };
@@ -296,12 +300,21 @@ createApp({
             const currentX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
             const currentY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-            selectedData.value = {
-                x: Math.min(dragStart.x, currentX),
-                y: Math.min(dragStart.y, currentY),
-                width: Math.abs(currentX - dragStart.x),
-                height: Math.abs(currentY - dragStart.y)
-            };
+            if (currentTool.value === 'comment' || isRightClickDrag.value) {
+                // 矢印用: 開始点(x,y)と現在点(x2,y2)
+                selectedData.value.x = dragStart.x;
+                selectedData.value.y = dragStart.y;
+                selectedData.value.x2 = currentX;
+                selectedData.value.y2 = currentY;
+                selectedData.value.width = Math.abs(currentX - dragStart.x);
+                selectedData.value.height = Math.abs(currentY - dragStart.y);
+            } else {
+                // 通常の枠線(rect)
+                selectedData.value.x = Math.min(dragStart.x, currentX);
+                selectedData.value.y = Math.min(dragStart.y, currentY);
+                selectedData.value.width = Math.abs(currentX - dragStart.x);
+                selectedData.value.height = Math.abs(currentY - dragStart.y);
+            }
         };
 
         // マウスアップ（枠線の確定）
@@ -309,9 +322,9 @@ createApp({
             if (isDragging.value) {
                 isDragging.value = false;
                 if (selectedData.value.width > 0.5 || selectedData.value.height > 0.5) {
-                    if (isRightClickDrag) {
+                    if (isRightClickDrag.value) {
                         addMarker(true);
-                        isRightClickDrag = false;
+                        isRightClickDrag.value = false;
                     } else {
                         isAddFormOpen.value = true;
                     }
@@ -352,6 +365,8 @@ createApp({
             const markerData = {
                 x: selectedData.value.x,
                 y: selectedData.value.y,
+                x2: selectedData.value.x2,
+                y2: selectedData.value.y2,
                 width: selectedData.value.width,
                 height: selectedData.value.height,
                 type: type,
@@ -365,7 +380,7 @@ createApp({
 
             // 入力欄をクリア
             reason.value = "";
-            selectedData.value = { x: null, y: null, width: 0, height: 0 };
+            selectedData.value = { x: null, y: null, x2: null, y2: null, width: 0, height: 0 };
             isAddFormOpen.value = false; // マーカー確定後にアコーディオンを自動で閉じる
         };
 
@@ -714,6 +729,7 @@ createApp({
             isUploadFormOpen,
             connectionCount,
             currentTool,
+            isRightClickDrag,
             isDragging,
             executeSearch,
             clearSearch
