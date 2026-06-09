@@ -10,10 +10,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
     <script src="/socket.io/socket.io.js"></script>
     <!-- Vue 3 Global Build -->
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="style.css">
     <style>
         /* 枠線（Rectangle）用のスタイル */
@@ -55,16 +55,50 @@
             <div id="shared-board" class="pdf-area" ref="sharedBoard">
                 <div id="pdf-container" class="pdf-page-container" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @contextmenu.prevent ref="pdfContainer">
                     <canvas id="pdf-canvas" ref="pdfCanvas"></canvas>
+
+                    <!-- 矢印の描画 -->
+                    <svg class="marker-arrow-svg">
+                        <defs>
+                            <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" />
+                            </marker>
+                            <marker id="arrowhead-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+                            </marker>
+                            <!-- 接続用のドット定義 -->
+                            <marker id="dot-red" markerWidth="4" markerHeight="4" refX="2" refY="2">
+                                <circle cx="2" cy="2" r="1.5" fill="#ef4444" />
+                            </marker>
+                        </defs>
+                        <template v-for="m in currentPageMarkers" :key="'line-' + getMarkerId(m)">
+                            <line v-if="m.type === 'comment'"
+                                :x1="m.x2 + '%'" :y1="m.y2 + '%'" 
+                                :x2="m.x + '%'" :y2="m.y + '%'" 
+                                :stroke="m.resolved ? '#94a3b8' : '#ef4444'" stroke-width="2.5" :marker-end="m.resolved ? 'url(#arrowhead-gray)' : 'url(#arrowhead-red)'" :marker-start="m.resolved ? '' : 'url(#dot-red)'" />
+                        </template>
+                    </svg>
                     
                     <!-- 登録済みのマークを描画 -->
-                    <div
-                        v-for="marker in currentPageMarkers" 
-                        :key="getMarkerId(marker)" 
-                        :class="['marker', marker.type || 'point', { resolved: marker.resolved }]"
-                        :style="marker.type === 'rect' ? { left: marker.x + '%', top: marker.y + '%', width: marker.width + '%', height: marker.height + '%' } : { left: marker.x + '%', top: marker.y + '%' }"
-                        :data-reason="marker.reason"
-                        @click.stop="showMarkerReason(marker)"
-                    ></div>
+                    <template v-for="marker in currentPageMarkers" :key="getMarkerId(marker)">
+                        <div
+                            v-if="marker.type !== 'comment'"
+                            :class="['marker', marker.type || 'point', { resolved: marker.resolved }]"
+                            :style="marker.type === 'rect' ? { left: marker.x + '%', top: marker.y + '%', width: marker.width + '%', height: marker.height + '%' } : { left: marker.x + '%', top: marker.y + '%' }"
+                            :data-reason="marker.reason"
+                            @click.stop="showMarkerReason(marker)"
+                        ></div>
+                    </template>
+
+                    <!-- コメント吹き出しを描画 (常時表示) -->
+                    <template v-for="m in currentPageMarkers" :key="'bubble-' + getMarkerId(m)">
+                        <div 
+                            v-if="m.type === 'comment'"
+                            class="comment-bubble"
+                            :class="{ resolved: m.resolved }"
+                            :style="{ left: m.x2 + '%', top: m.y2 + '%' }"
+                            @click.stop="toggleMarkerResolved(m)"
+                        >{{ m.reason }}</div>
+                    </template>
 
                     <!-- 検索ハイライトを表示 -->
                     <div 
@@ -75,10 +109,26 @@
                     ></div>
 
                     <!-- 一時マーク（位置決定中）を描画 -->
+                    <svg v-if="isDragging && (currentTool === 'comment' || isRightClickDrag)" class="marker-arrow-svg">
+                        <defs>
+                            <marker id="arrowhead-temp" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                <polygon points="0 0, 10 3.5, 0 7" fill="rgba(96, 165, 250, 0.8)" />
+                            </marker>
+                            <marker id="dot-temp" markerWidth="4" markerHeight="4" refX="2" refY="2">
+                                <circle cx="2" cy="2" r="1.5" fill="rgba(96, 165, 250, 0.8)" />
+                            </marker>
+                        </defs>
+                        <line 
+                            :x1="selectedData.x2 + '%'" :y1="selectedData.y2 + '%'" 
+                            :x2="selectedData.x + '%'" :y2="selectedData.y + '%'" 
+                            stroke="rgba(96, 165, 250, 0.8)" stroke-width="3" stroke-dasharray="4" 
+                            marker-end="url(#arrowhead-temp)" marker-start="url(#dot-temp)" />
+                    </svg>
+
                     <div 
-                        v-if="selectedData.x !== null" 
+                        v-if="selectedData.x !== null && (currentTool === 'rect' || isRightClickDrag || !isDragging)" 
                         :class="['marker', 'temp-marker', (isDragging && selectedData.width > 0) ? 'rect' : currentTool]"
-                        :style="(currentTool === 'rect' || (isDragging && selectedData.width > 0)) ? { left: selectedData.x + '%', top: selectedData.y + '%', width: selectedData.width + '%', height: selectedData.height + '%' } : { left: selectedData.x + '%', top: selectedData.y + '%' }"
+                        :style="currentTool === 'comment' ? { left: selectedData.x2 + '%', top: selectedData.y2 + '%' } : (currentTool === 'rect' || (isDragging && selectedData.width > 0)) ? { left: selectedData.x + '%', top: selectedData.y + '%', width: selectedData.width + '%', height: selectedData.height + '%' } : { left: selectedData.x + '%', top: selectedData.y + '%' }"
                     ></div>
                 </div>
             </div>
@@ -153,6 +203,7 @@
                     <div class="tool-selector" style="display: flex; gap: 5px; margin-bottom: 15px;">
                         <button :class="{ active: currentTool === 'point' }" @click="currentTool = 'point'" class="small-btn">📍 点</button>
                         <button :class="{ active: currentTool === 'rect' }" @click="currentTool = 'rect'" class="small-btn">🔳 枠線</button>
+                        <button :class="{ active: currentTool === 'comment' }" @click="currentTool = 'comment'" class="small-btn">↗ コメント</button>
                     </div>
 
                     <div style="margin-bottom: 12px;">
