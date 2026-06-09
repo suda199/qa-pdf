@@ -453,8 +453,11 @@ createApp({
                     const imported = JSON.parse(evt.target.result);
                     if (!Array.isArray(imported)) throw new Error("Invalid format");
 
+                    // 理由が「（共有のみ）」の項目を除外してフィルタリング
+                    const filtered = imported.filter(m => m.reason !== '（共有のみ）');
+
                     // データを一件ずつ送信
-                    imported.forEach(m => {
+                    filtered.forEach(m => {
                         const markerData = {
                             x: m.x,
                             y: m.y,
